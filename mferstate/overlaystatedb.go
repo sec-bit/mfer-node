@@ -12,7 +12,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dynm/mfer-safe/constant"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -20,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/kataras/golog"
+	"github.com/sec-bit/mfer-safe/constant"
 	"github.com/tj/go-spin"
 )
 

@@ -8,8 +8,6 @@ import (
 	"math/big"
 
 	"github.com/davecgh/go-spew/spew"
-	"github.com/dynm/mfer-safe/mfersigner"
-	"github.com/dynm/mfer-safe/multisend"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
@@ -18,6 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/kataras/golog"
+	"github.com/sec-bit/mfer-safe/mfersigner"
+	"github.com/sec-bit/mfer-safe/multisend"
 )
 
 type MferActionAPI struct {

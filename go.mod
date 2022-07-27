@@ -1,4 +1,4 @@
-module github.com/dynm/mfer-safe
+module github.com/sec-bit/mfer-safe
 
 go 1.17
 

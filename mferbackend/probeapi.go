@@ -6,12 +6,12 @@ import (
 	"log"
 	"math/big"
 
-	"github.com/dynm/mfer-safe/mfertracer"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/sec-bit/mfer-safe/mfertracer"
 )
 
 type ProbeAPI struct {
