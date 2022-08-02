@@ -24,28 +24,25 @@ type MferActionAPI struct {
 	b *MferBackend
 }
 
-func (s *MferActionAPI) resetState() {
-	s.b.EVM.ResetState()
-	s.b.EVM.Prepare(nil)
-}
-
 func (s *MferActionAPI) ResetState() {
 	s.b.EVM.StateLock()
 	defer s.b.EVM.StateUnlock()
-	s.resetState()
+	s.b.EVM.Prepare()
 }
 
 func (s *MferActionAPI) ClearTxPool() {
 	s.b.TxPool.Reset()
 	s.b.EVM.StateLock()
 	defer s.b.EVM.StateUnlock()
-	s.resetState()
+	// s.b.EVM.Prepare()
+	s.b.EVM.ResetToRoot()
 }
 
 func (s *MferActionAPI) ReExecTxPool() {
 	s.b.EVM.StateLock()
 	defer s.b.EVM.StateUnlock()
-	s.resetState()
+	s.b.EVM.Prepare()
+
 	txs, _ := s.b.TxPool.GetPoolTxs()
 	execResults := s.b.EVM.ExecuteTxs(txs, s.b.EVM.StateDB, nil)
 	s.b.TxPool.SetResults(execResults)
@@ -313,10 +310,11 @@ func (s *MferActionAPI) traceBlocks(ctx context.Context, blocks []*types.Block, 
 
 	// Assemble the structured logger or the JavaScript tracer
 
-	stateBN := int(blocks[0].Header().Number.Int64() - 1)
-	s.b.EVM.Prepare(&stateBN)
-	BNu64 := uint64(stateBN)
-	s.b.EVM.StateDB.InitState(&BNu64)
+	stateBN := uint64(blocks[0].Header().Number.Int64() - 1)
+	s.b.EVM.SetBlockNumber(stateBN)
+	s.b.EVM.Prepare()
+	// BNu64 := uint64(stateBN)
+	s.b.EVM.StateDB.InitState(false)
 	stateDB := s.b.EVM.StateDB.CloneFromRoot()
 
 	golog.Infof("Warming up %d txs", len(allTxs))

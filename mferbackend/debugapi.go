@@ -102,7 +102,7 @@ func (s *DebugAPI) TraceTransaction(ctx context.Context, txHash common.Hash, con
 	)
 
 	txctx := &tracers.Context{
-		BlockHash: s.b.EVM.GetLatestBlockHeader().ParentHash,
+		BlockHash: s.b.EVM.GetBlockHeader("latest").ParentHash,
 		TxIndex:   len(txs),
 		TxHash:    txToBeTraced.Hash(),
 	}

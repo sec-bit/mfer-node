@@ -10,7 +10,7 @@ import (
 
 func TestEVMExecute(t *testing.T) {
 	mferEVM := NewMferEVM("http://tractor.local:8545", common.HexToAddress("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"), "./keycache.txt", 50)
-	mferEVM.Prepare(nil)
+	mferEVM.Prepare()
 
 	tx, _, _ := mferEVM.Conn.TransactionByHash(context.Background(), common.HexToHash("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"))
 

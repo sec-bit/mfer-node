@@ -52,19 +52,23 @@ type MferEVM struct {
 	timeDelta           uint64
 	blockNumberDelta    uint64
 	tracer              vm.Tracer
+	blockNumber         *uint64
+	pinBlock            bool
+	// specifiedBlockNumber *uint64
 }
 
 func NewMferEVM(rawurl string, impersonatedAccount common.Address, keyCacheFilePath string, batchSize int) *MferEVM {
 	mferEVM := &MferEVM{}
 	splittedRawUrl := strings.Split(rawurl, "@")
-	var specificBlock *int
+	var specificBlock *uint64
 	if len(splittedRawUrl) > 1 {
 		bnStr := splittedRawUrl[len(splittedRawUrl)-1]
 		bn, err := strconv.Atoi(bnStr)
 		if err != nil {
 			log.Panic(err)
 		}
-		specificBlock = &bn
+		bnU64 := uint64(bn)
+		specificBlock = &bnU64
 		lastIndex := strings.LastIndex(rawurl, "@"+bnStr)
 		rawurl = rawurl[:lastIndex]
 	}
@@ -84,18 +88,21 @@ DIAL:
 	mferEVM.impersonatedAccount = impersonatedAccount
 	mferEVM.keyCacheFilePath = keyCacheFilePath
 	mferEVM.batchSize = batchSize
-	err = mferEVM.Prepare(specificBlock)
+	mferEVM.blockNumber = new(uint64)
+	if specificBlock != nil {
+		mferEVM.SetBlockNumber(*specificBlock)
+		mferEVM.pinBlock = true
+		golog.Infof("Using specific block %d, auto update block context disabled", *specificBlock)
+	} else {
+		go mferEVM.updatePendingBN()
+	}
+	err = mferEVM.Prepare()
 	if err != nil {
 		golog.Errorf("Prepare error: %v", err)
 		time.Sleep(time.Second)
 		goto DIAL
 	}
-
-	if specificBlock == nil {
-		go mferEVM.updatePendingBN()
-	} else {
-		golog.Infof("Using specific block %d, auto update block context disabled", *specificBlock)
-	}
+	golog.Infof("Using block %d", mferEVM.StateDB.StateBlockNumber())
 
 	return mferEVM
 }
@@ -108,9 +115,9 @@ func (a *MferEVM) StateUnlock() {
 	a.stateLock.Unlock()
 }
 
-func (a *MferEVM) GetLatestBlockHeader() *types.Header {
+func (a *MferEVM) GetBlockHeader(blockNumber string) *types.Header {
 	var raw json.RawMessage
-	err := a.RpcClient.CallContext(a.ctx, &raw, "eth_getBlockByNumber", "latest", false)
+	err := a.RpcClient.CallContext(a.ctx, &raw, "eth_getBlockByNumber", blockNumber, false)
 	if err != nil {
 		golog.Errorf("GetBlockHeader err: %v", err)
 		return nil
@@ -126,21 +133,27 @@ func (a *MferEVM) GetLatestBlockHeader() *types.Header {
 
 	return &head
 }
-func (a *MferEVM) ResetState() {
-	lastBlockHeader := a.GetLatestBlockHeader()
-	if lastBlockHeader == nil {
-		return
-	}
-	a.StateDB.InitState(nil)
-	a.gasPool = new(core.GasPool)
-	a.gasPool.AddGas(lastBlockHeader.GasLimit)
-}
+
+// func (a *MferEVM) ResetState() {
+// 	a.StateDB.InitState()
+// }
 
 func (a *MferEVM) ChainID() *big.Int {
 	return a.chainConfig.ChainID
 }
 
-func (a *MferEVM) Prepare(bn *int) error {
+func (a *MferEVM) SetBlockNumber(bn uint64) {
+	*a.blockNumber = bn
+}
+
+func (a *MferEVM) ResetToRoot() {
+	a.StateDB.InitState(false)
+	a.StateDB.InitFakeAccounts()
+	a.gasPool = new(core.GasPool)
+	a.gasPool.AddGas(a.vmContext.GasLimit)
+}
+
+func (a *MferEVM) Prepare() error {
 	a.chainConfig = core.DefaultGenesisBlock().Config
 	chainID, err := a.Conn.ChainID(a.ctx)
 	if err != nil {
@@ -152,23 +165,6 @@ func (a *MferEVM) Prepare(bn *int) error {
 	a.chainConfig.ByzantiumBlock = big.NewInt(0)
 	a.chainConfig.ConstantinopleBlock = big.NewInt(0)
 
-	lastBlockHeader := a.GetLatestBlockHeader()
-	if lastBlockHeader == nil {
-		return fmt.Errorf("cannot get last block")
-	}
-
-	if a.StateDB == nil {
-		var blockNumber int
-		if bn == nil {
-			blockNumber = int(lastBlockHeader.Number.Int64())
-		} else {
-			blockNumber = *bn
-		}
-		a.StateDB = mferstate.NewOverlayStateDB(a.RpcClient, blockNumber, a.keyCacheFilePath, a.batchSize)
-		a.StateDB.InitState(nil)
-	}
-	a.StateDB.InitFakeAccounts()
-
 	getHash := func(bn uint64) common.Hash {
 		blk, err := a.Conn.BlockByNumber(a.ctx, new(big.Int).SetUint64(bn))
 		if err != nil {
@@ -177,7 +173,6 @@ func (a *MferEVM) Prepare(bn *int) error {
 		return blk.Hash()
 	}
 	a.gasPool = new(core.GasPool)
-	// a.gasPool.AddGas(lastBlockHeader.GasLimit)
 	a.gasPool.AddGas(math.MaxUint64)
 	a.vmContext = vm.BlockContext{
 		CanTransfer: core.CanTransfer,
@@ -189,9 +184,17 @@ func (a *MferEVM) Prepare(bn *int) error {
 		Time:        big.NewInt(0),
 		Difficulty:  big.NewInt(0),
 	}
-	if bn == nil {
-		a.setVMContext()
+
+	header := a.setVMContext()
+	bn := header.Number.Uint64()
+	a.SetBlockNumber(bn)
+	if a.StateDB == nil {
+		a.StateDB = mferstate.NewOverlayStateDB(a.RpcClient, a.blockNumber, a.keyCacheFilePath, a.batchSize)
 	}
+	a.StateDB.InitState(true)
+	a.StateDB.InitFakeAccounts()
+	a.gasPool = new(core.GasPool)
+	a.gasPool.AddGas(a.vmContext.GasLimit)
 	return nil
 }
 
@@ -215,16 +218,23 @@ func (a *MferEVM) GetBlockNumberDelta() uint64 {
 	return a.blockNumberDelta
 }
 
-func (a *MferEVM) setVMContext() {
-	lastBlockHeader := a.GetLatestBlockHeader()
-	if lastBlockHeader == nil {
+func (a *MferEVM) setVMContext() (header *types.Header) {
+	if a.pinBlock {
+		golog.Debugf("pinblock: %v, bn: %d", a.pinBlock, *a.blockNumber)
+		header = a.GetBlockHeader(fmt.Sprintf("0x%x", *a.blockNumber))
+	} else {
+		golog.Debugf("pinblock: %v, bn: latest", a.pinBlock)
+		header = a.GetBlockHeader("latest")
+	}
+	if header == nil {
 		return
 	}
 
-	a.vmContext.BlockNumber.SetInt64(int64(lastBlockHeader.Number.Uint64() + 1 + a.blockNumberDelta))
-	a.vmContext.Time.SetInt64(int64(lastBlockHeader.Time + a.timeDelta))
-	a.vmContext.Difficulty.Set(lastBlockHeader.Difficulty)
-	a.vmContext.GasLimit = lastBlockHeader.GasLimit
+	a.vmContext.BlockNumber.SetInt64(int64(header.Number.Uint64() + 1 + a.blockNumberDelta))
+	a.vmContext.Time.SetInt64(int64(header.Time + a.timeDelta))
+	a.vmContext.Difficulty.Set(header.Difficulty)
+	a.vmContext.GasLimit = header.GasLimit
+	return
 }
 
 func (a *MferEVM) SetVMContextByBlock(block *types.Block) {
@@ -269,17 +279,22 @@ func (a *MferEVM) updatePendingBN() {
 		case <-tickerCheckMissingTireNode.C:
 			stateHeight := a.StateDB.StateBlockNumber()
 			golog.Infof("Checking if height@%d(0x%02x) is missing", stateHeight, stateHeight)
-			balance, err := a.Conn.BalanceAt(a.ctx, common.HexToAddress("0x0000000000000000000000000000000000000000"), big.NewInt(stateHeight))
+			balance, err := a.Conn.BalanceAt(a.ctx, common.HexToAddress("0x0000000000000000000000000000000000000000"), big.NewInt(int64(stateHeight)))
 			if err != nil {
 				golog.Error(err)
 			}
+			shouldUpdateBN := false
 			if err != nil && strings.Contains(err.Error(), "missing trie node") {
 				golog.Warn("InitState (missing trie node)")
-				// a.StateDB.InitState()
-				a.SelfClient.Call(nil, "mfer_reExecTxPool")
+				shouldUpdateBN = true
 			} else if balance.Sign() == 0 { //some node will not tell us missing trie node
 				golog.Warn("InitState (0x0000...0000 balance is zero)")
+				shouldUpdateBN = true
+			}
+			if shouldUpdateBN {
 				// a.StateDB.InitState()
+				// header := a.setVMContext()
+				// a.SetBlockNumber(header.Number.Uint64())
 				a.SelfClient.Call(nil, "mfer_reExecTxPool")
 			}
 
