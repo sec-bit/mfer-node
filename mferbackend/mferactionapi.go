@@ -312,9 +312,9 @@ func (s *MferActionAPI) traceBlocks(ctx context.Context, blocks []*types.Block, 
 
 	stateBN := uint64(blocks[0].Header().Number.Int64() - 1)
 	s.b.EVM.SetBlockNumber(stateBN)
-	s.b.EVM.Prepare()
+	s.b.EVM.Prepare() // TODO keep underlying state for re-use
 	// BNu64 := uint64(stateBN)
-	s.b.EVM.StateDB.InitState(false)
+	// s.b.EVM.StateDB.InitState(false)
 	stateDB := s.b.EVM.StateDB.CloneFromRoot()
 
 	golog.Infof("Warming up %d txs", len(allTxs))
