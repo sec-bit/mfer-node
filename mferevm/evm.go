@@ -237,8 +237,7 @@ func (a *MferEVM) setVMContext() (header *types.Header) {
 	return
 }
 
-func (a *MferEVM) SetVMContextByBlock(block *types.Block) {
-	header := block.Header()
+func (a *MferEVM) SetVMContextByBlockHeader(header *types.Header) {
 	a.vmContext.BlockNumber.SetInt64(int64(header.Number.Uint64()))
 	a.vmContext.Time.SetInt64(int64(header.Time + a.timeDelta))
 	a.vmContext.Difficulty.Set(header.Difficulty)

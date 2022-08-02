@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/kataras/golog"
 	"github.com/sec-bit/mfer-safe/mfersigner"
 	"github.com/sec-bit/mfer-safe/mfertracer"
 )
@@ -98,6 +99,14 @@ func (s *EthAPI) Call(ctx context.Context, args TransactionArgs, blockNrOrHash r
 
 	stateDB := s.b.EVM.StateDB.Clone()
 	defer stateDB.DestroyState()
+	if blockNrOrHash.BlockNumber != nil && *blockNrOrHash.BlockNumber != -1 {
+		bnHex := fmt.Sprintf("0x%x", *blockNrOrHash.BlockNumber)
+		golog.Infof("Call with block number %s", bnHex)
+		header := s.b.EVM.GetBlockHeader(bnHex)
+		if header != nil {
+			s.b.EVM.SetVMContextByBlockHeader(header)
+		}
+	}
 	result, err := s.b.EVM.DoCall(&msg, false, stateDB)
 	if err != nil {
 		return nil, err

@@ -325,7 +325,7 @@ func (s *MferActionAPI) traceBlocks(ctx context.Context, blocks []*types.Block, 
 	golog.Infof("Tracing: block from %d using state %d\n", blocks[0].Header().Number, stateBN)
 	for i, block := range blocks {
 		txs := block.Transactions()
-		s.b.EVM.SetVMContextByBlock(block)
+		s.b.EVM.SetVMContextByBlockHeader(block.Header())
 		s.b.EVM.ExecuteTxs(txs, stateDB, config)
 
 		results := make([]*txTraceResult, len(txs))
