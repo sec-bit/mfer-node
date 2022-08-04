@@ -230,6 +230,7 @@ func (a *MferEVM) setVMContext() (header *types.Header) {
 		return
 	}
 
+	a.vmContext.Coinbase = header.Coinbase // use real world coinbase to avoid simulation cheating
 	a.vmContext.BlockNumber.SetInt64(int64(header.Number.Uint64() + 1 + a.blockNumberDelta))
 	a.vmContext.Time.SetInt64(int64(header.Time + a.timeDelta))
 	a.vmContext.Difficulty.Set(header.Difficulty)
