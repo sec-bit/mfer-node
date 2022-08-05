@@ -9,7 +9,6 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -193,7 +192,8 @@ func (s *EthAPI) SendTransaction(ctx context.Context, args TransactionArgs) (com
 	s.b.EVM.StateLock()
 	defer s.b.EVM.StateUnlock()
 	if args.Gas == nil {
-		gas := hexutil.Uint64(math.MaxUint64 / 2)
+		blockGasLimit := s.b.EVM.GetVMContext().GasLimit
+		gas := hexutil.Uint64(blockGasLimit / 3)
 		args.Gas = &gas
 	}
 
