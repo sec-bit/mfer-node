@@ -93,6 +93,7 @@ func (db *OverlayStateDB) InitFakeAccounts() {
 	db.AddBalance(constant.FAKE_ACCOUNT_1, new(big.Int).Mul(big.NewInt(1e18), big.NewInt(1000)))
 	db.AddBalance(constant.FAKE_ACCOUNT_2, new(big.Int).Mul(big.NewInt(1e18), big.NewInt(1000)))
 	db.AddBalance(constant.FAKE_ACCOUNT_3, new(big.Int).Mul(big.NewInt(1e18), big.NewInt(1000)))
+	db.AddBalance(constant.FAKE_ACCOUNT_RICH, new(big.Int).Mul(big.NewInt(1e18), big.NewInt(1_000_000_000)))
 }
 
 func (db *OverlayStateDB) GetBalance(account common.Address) *big.Int {

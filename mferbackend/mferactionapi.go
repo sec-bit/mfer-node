@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/kataras/golog"
+	"github.com/sec-bit/mfer-safe/constant"
 	"github.com/sec-bit/mfer-safe/mfersigner"
 	"github.com/sec-bit/mfer-safe/multisend"
 )
@@ -76,7 +77,16 @@ func (s *MferActionAPI) GetBlockNumberDelta() uint64 {
 }
 
 func (s *MferActionAPI) PrintMoney(account common.Address) {
-	s.b.EVM.StateDB.AddBalance(account, new(big.Int).Mul(big.NewInt(1e18), big.NewInt(1000)))
+	OneKETH := new(big.Int).Mul(big.NewInt(1e18), big.NewInt(1000))
+	OneKETHHB := hexutil.Big(*OneKETH)
+	calldata := hexutil.Bytes(common.Hex2Bytes("4f9fb60b"))
+	txArgs := &TransactionArgs{
+		From:  &constant.FAKE_ACCOUNT_RICH,
+		To:    &account,
+		Value: &OneKETHHB,
+		Data:  &calldata,
+	}
+	s.b.EVM.SelfClient.Call(nil, "eth_sendTransaction", txArgs)
 }
 
 type TxData struct {
