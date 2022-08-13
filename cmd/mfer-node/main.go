@@ -39,6 +39,7 @@ const VERSION = "0.1.1"
 
 func main() {
 	account := flag.String("account", "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "impersonate account")
+	rand := flag.Bool("rand", false, "randomize account")
 	upstreamURL := flag.String("upstream", "http://tractor.local:8545", "upstream node")
 	listenURL := flag.String("listen", "127.0.0.1:10545", "web3provider bind address port")
 
@@ -95,7 +96,7 @@ func main() {
 	impersonatedAccount := common.HexToAddress(*account)
 	mferEVM := mferevm.NewMferEVM(*upstreamURL, impersonatedAccount, *keyCacheFilePath, *batchSize)
 	txPool := mfertxpool.NewMferTxPool()
-	b := mferbackend.NewMferBackend(mferEVM, txPool, impersonatedAccount)
+	b := mferbackend.NewMferBackend(mferEVM, txPool, impersonatedAccount, *rand)
 
 	stack.RegisterAPIs(mferbackend.GetEthAPIs(b))
 	if err := stack.Start(); err != nil {

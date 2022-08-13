@@ -14,5 +14,6 @@ var (
 	FAKE_ACCOUNT_3 = common.HexToAddress("0xdddddddddddddddddddddddddddddddddddddddd")
 
 	FAKE_ACCOUNT_RICH = common.BytesToAddress(crypto.Keccak256([]byte(time.Now().String())))
+	FAKE_ACCOUNT_RAND = common.BytesToAddress(crypto.Keccak256([]byte(time.Now().String())))
 	//  common.HexToAddress("0x0101010101010101010101010101010101010101")
 )

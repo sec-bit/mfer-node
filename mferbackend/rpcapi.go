@@ -1,6 +1,7 @@
 package mferbackend
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"log"
@@ -13,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/kataras/golog"
+	"github.com/sec-bit/mfer-safe/constant"
 	"github.com/sec-bit/mfer-safe/mfersigner"
 	"github.com/sec-bit/mfer-safe/mfertracer"
 )
@@ -90,12 +92,31 @@ func (s *EthAPI) RequestAccounts() []common.Address {
 	return s.b.Accounts()
 }
 
+func (s *EthAPI) preprocessArgs(args TransactionArgs) TransactionArgs {
+	if !s.b.Randomized {
+		return args
+	}
+
+	if args.From != nil && *args.From == constant.FAKE_ACCOUNT_RAND {
+		golog.Infof("replace rand addr: %s with actual: %s", constant.FAKE_ACCOUNT_RAND.Hex(), s.b.ImpersonatedAccount.Hex())
+		*args.From = s.b.ImpersonatedAccount
+	}
+	if args.Data != nil {
+		calldata := []byte(*args.Data)
+		golog.Debugf("origin calldata: %02x, rand acc: %02x", calldata, constant.FAKE_ACCOUNT_RAND.Bytes())
+		calldataReplaced := bytes.ReplaceAll(calldata, constant.FAKE_ACCOUNT_RAND.Bytes(), s.b.ImpersonatedAccount.Bytes())
+		args.Data = (*hexutil.Bytes)(&calldataReplaced)
+	}
+
+	return args
+}
+
 func (s *EthAPI) Call(ctx context.Context, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *StateOverride) (hexutil.Bytes, error) {
+	args = s.preprocessArgs(args)
 	msg, err := args.ToMessage(0, nil)
 	if err != nil {
 		return nil, err
 	}
-
 	stateDB := s.b.EVM.StateDB.Clone()
 	defer stateDB.DestroyState()
 	if blockNrOrHash.BlockNumber != nil && *blockNrOrHash.BlockNumber != -1 {
@@ -118,6 +139,7 @@ func (s *EthAPI) Call(ctx context.Context, args TransactionArgs, blockNrOrHash r
 }
 
 func (s *EthAPI) EstimateGas(ctx context.Context, args TransactionArgs, blockNrOrHash *rpc.BlockNumberOrHash) (hexutil.Uint64, error) {
+	args = s.preprocessArgs(args)
 	var from *common.Address
 	if args.From != nil {
 		from = args.From
@@ -176,6 +198,7 @@ func (s *EthAPI) GetCode(ctx context.Context, address common.Address, blockNrOrH
 }
 
 func (s *EthAPI) SendTransaction(ctx context.Context, args TransactionArgs) (common.Hash, error) {
+	args = s.preprocessArgs(args)
 	var from *common.Address
 	if args.From != nil && (*args.From).String() != (common.Address{}).String() {
 		from = args.From
