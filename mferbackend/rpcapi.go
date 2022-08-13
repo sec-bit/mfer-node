@@ -98,7 +98,7 @@ func (s *EthAPI) preprocessArgs(args TransactionArgs) TransactionArgs {
 	}
 
 	if args.From != nil && *args.From == constant.FAKE_ACCOUNT_RAND {
-		golog.Infof("replace rand addr: %s with actual: %s", constant.FAKE_ACCOUNT_RAND.Hex(), s.b.ImpersonatedAccount.Hex())
+		golog.Debugf("replace rand addr: %s with actual: %s", constant.FAKE_ACCOUNT_RAND.Hex(), s.b.ImpersonatedAccount.Hex())
 		*args.From = s.b.ImpersonatedAccount
 	}
 	if args.Data != nil {

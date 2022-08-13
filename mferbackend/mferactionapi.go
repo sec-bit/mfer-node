@@ -62,6 +62,10 @@ func (s *MferActionAPI) Impersonate(account common.Address) {
 	s.b.ImpersonatedAccount = account
 }
 
+func (s *MferActionAPI) ImpersonatedAccount() common.Address {
+	return s.b.ImpersonatedAccount
+}
+
 func (s *MferActionAPI) SetBatchSize(batchSize int) {
 	golog.Infof("Setting batch size to %d", batchSize)
 	s.b.EVM.StateDB.SetBatchSize(batchSize)
@@ -74,6 +78,15 @@ func (s *MferActionAPI) SetBlockNumberDelta(delta uint64) {
 
 func (s *MferActionAPI) GetBlockNumberDelta() uint64 {
 	return s.b.EVM.GetBlockNumberDelta()
+}
+
+func (s *MferActionAPI) ToggleRandAddr(enable bool) {
+	golog.Infof("toggle rand address %v", enable)
+	s.b.Randomized = enable
+}
+
+func (s *MferActionAPI) RandAddrEnabled() bool {
+	return s.b.Randomized
 }
 
 func (s *MferActionAPI) PrintMoney(account common.Address) {
