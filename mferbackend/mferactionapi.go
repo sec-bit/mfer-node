@@ -92,12 +92,11 @@ func (s *MferActionAPI) RandAddrEnabled() bool {
 func (s *MferActionAPI) PrintMoney(account common.Address) {
 	OneKETH := new(big.Int).Mul(big.NewInt(1e18), big.NewInt(1000))
 	OneKETHHB := hexutil.Big(*OneKETH)
-	calldata := hexutil.Bytes(common.Hex2Bytes("4f9fb60b"))
 	txArgs := &TransactionArgs{
 		From:  &constant.FAKE_ACCOUNT_RICH,
 		To:    &account,
 		Value: &OneKETHHB,
-		Data:  &calldata,
+		Data:  nil,
 	}
 	s.b.EVM.SelfClient.Call(nil, "eth_sendTransaction", txArgs)
 }
