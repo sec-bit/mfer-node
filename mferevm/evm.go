@@ -17,6 +17,7 @@ import (
 	"github.com/dustin/go-humanize"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/eth/tracers"
+	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/kataras/golog"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -51,7 +52,7 @@ type MferEVM struct {
 	impersonatedAccount common.Address
 	timeDelta           uint64
 	blockNumberDelta    uint64
-	tracer              vm.Tracer
+	tracer              vm.EVMLogger
 	blockNumber         *uint64
 	pinBlock            bool
 	// specifiedBlockNumber *uint64
@@ -315,7 +316,7 @@ var (
 	blockHash = crypto.Keccak256Hash([]byte("fake block hash"))
 )
 
-func (a *MferEVM) SetTracer(t vm.Tracer) {
+func (a *MferEVM) SetTracer(t vm.EVMLogger) {
 	a.tracer = t
 }
 
@@ -365,7 +366,7 @@ func (a *MferEVM) ExecuteTxs(txs types.Transactions, stateDB vm.StateDB, config 
 		txIndex = 0
 	)
 	var (
-		tracer vm.Tracer
+		tracer tracers.Tracer
 		err    error
 	)
 	for i, tx := range txs {
@@ -392,7 +393,7 @@ func (a *MferEVM) ExecuteTxs(txs types.Transactions, stateDB vm.StateDB, config 
 			go func() {
 				<-deadlineCtx.Done()
 				if deadlineCtx.Err() == context.DeadlineExceeded {
-					tracer.(*tracers.Tracer).Stop(errors.New("execution timeout"))
+					tracer.Stop(errors.New("execution timeout"))
 				}
 			}()
 			defer cancel()
@@ -403,10 +404,10 @@ func (a *MferEVM) ExecuteTxs(txs types.Transactions, stateDB vm.StateDB, config 
 				log.Panic(err)
 			}
 		default:
-			config.LogConfig.EnableMemory = true
-			config.LogConfig.EnableReturnData = true
-			config.LogConfig.DisableStorage = false
-			tracer = vm.NewStructLogger(config.LogConfig)
+			config.EnableMemory = true
+			config.EnableReturnData = true
+			config.DisableStorage = false
+			tracer = logger.NewStructLogger(config.Config)
 		}
 		msg := a.TxToMessage(tx)
 		stateDB.(*mferstate.OverlayStateDB).SetCodeHash(msg.From(), common.Hash{})
@@ -457,7 +458,7 @@ func (a *MferEVM) ExecuteTxs(txs types.Transactions, stateDB vm.StateDB, config 
 			receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, tx.Nonce())
 		}
 
-		traceResult, err := tracer.(*tracers.Tracer).GetResult()
+		traceResult, err := tracer.GetResult()
 		if err != nil {
 			golog.Error(err)
 		}

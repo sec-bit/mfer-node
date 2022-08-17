@@ -10,8 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
+	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/kataras/golog"
 	"github.com/sec-bit/mfer-safe/mfertracer"
 )
@@ -38,7 +38,7 @@ type StructLogRes struct {
 }
 
 // FormatLogs formats EVM returned structured logs for json output
-func FormatLogs(logs []vm.StructLog) []StructLogRes {
+func FormatLogs(logs []logger.StructLog) []StructLogRes {
 	formatted := make([]StructLogRes, len(logs))
 	for index, trace := range logs {
 		formatted[index] = StructLogRes{
@@ -97,7 +97,7 @@ func (s *DebugAPI) TraceTransaction(ctx context.Context, txHash common.Hash, con
 
 	// Assemble the structured logger or the JavaScript tracer
 	var (
-		tracer vm.Tracer
+		tracer tracers.Tracer
 		err    error
 	)
 
@@ -125,18 +125,18 @@ func (s *DebugAPI) TraceTransaction(ctx context.Context, txHash common.Hash, con
 		go func() {
 			<-deadlineCtx.Done()
 			if deadlineCtx.Err() == context.DeadlineExceeded {
-				tracer.(*tracers.Tracer).Stop(errors.New("execution timeout"))
+				tracer.Stop(errors.New("execution timeout"))
 			}
 		}()
 		defer cancel()
 
 	case config == nil:
-		tracer = vm.NewStructLogger(nil)
+		tracer = logger.NewStructLogger(nil)
 	default:
-		config.LogConfig.EnableMemory = true
-		config.LogConfig.EnableReturnData = true
-		config.LogConfig.DisableStorage = false
-		tracer = vm.NewStructLogger(config.LogConfig)
+		config.EnableMemory = true
+		config.EnableReturnData = true
+		config.DisableStorage = false
+		tracer = logger.NewStructLogger(config.Config)
 	}
 	// Run the transaction with tracing enabled.
 
@@ -153,7 +153,7 @@ func (s *DebugAPI) TraceTransaction(ctx context.Context, txHash common.Hash, con
 	}
 	// Depending on the tracer type, format and return the output.
 	switch tracer := tracer.(type) {
-	case *vm.StructLogger:
+	case *logger.StructLogger:
 		// If the result contains a revert reason, return it.
 		returnVal := fmt.Sprintf("%x", result.Return())
 		if len(result.Revert()) > 0 {
@@ -166,7 +166,7 @@ func (s *DebugAPI) TraceTransaction(ctx context.Context, txHash common.Hash, con
 			StructLogs:  FormatLogs(tracer.StructLogs()),
 		}, nil
 
-	case *tracers.Tracer:
+	case tracers.Tracer:
 		return tracer.GetResult()
 
 	default:

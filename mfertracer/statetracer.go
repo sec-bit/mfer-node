@@ -15,13 +15,15 @@ func NewStateTracer() *StateTracer {
 }
 
 type StateTracer struct {
+	env          *vm.EVM
 	slotAccessed map[common.Address]map[common.Hash]common.Hash
 }
 
 func (tracer *StateTracer) CaptureStart(env *vm.EVM, from common.Address, to common.Address, create bool, input []byte, gas uint64, value *big.Int) {
+	tracer.env = env
 }
 
-func (tracer *StateTracer) CaptureState(env *vm.EVM, pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
+func (tracer *StateTracer) CaptureState(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, rData []byte, depth int, err error) {
 	contract := scope.Contract.Address()
 	if _, ok := tracer.slotAccessed[contract]; !ok {
 		tracer.slotAccessed[contract] = make(map[common.Hash]common.Hash)
@@ -32,7 +34,7 @@ func (tracer *StateTracer) CaptureState(env *vm.EVM, pc uint64, op vm.OpCode, ga
 			stack := scope.Stack.Data()
 			key := stack[len(stack)-1]
 			keyHash := common.Hash(key.Bytes32())
-			val := env.StateDB.GetState(scope.Contract.Address(), keyHash)
+			val := tracer.env.StateDB.GetState(scope.Contract.Address(), keyHash)
 			tracer.slotAccessed[contract][keyHash] = val
 		}
 	case vm.SSTORE:
@@ -48,8 +50,7 @@ func (tracer *StateTracer) CaptureState(env *vm.EVM, pc uint64, op vm.OpCode, ga
 func (tracer *StateTracer) CaptureEnter(typ vm.OpCode, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
 }
 func (tracer *StateTracer) CaptureExit(output []byte, gasUsed uint64, err error) {}
-func (tracer *StateTracer) CaptureFault(env *vm.EVM, pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, depth int, err error) {
-}
+
 func (tracer *StateTracer) CaptureEnd(output []byte, gasUsed uint64, t time.Duration, err error) {}
 
 func (tracer *StateTracer) GetResult() map[common.Address]map[common.Hash]common.Hash {
@@ -59,3 +60,9 @@ func (tracer *StateTracer) GetResult() map[common.Address]map[common.Hash]common
 func (tracer *StateTracer) Reset() {
 	tracer.slotAccessed = make(map[common.Address]map[common.Hash]common.Hash)
 }
+
+func (tracer *StateTracer) CaptureFault(pc uint64, op vm.OpCode, gas, cost uint64, scope *vm.ScopeContext, depth int, err error) {
+}
+
+func (tracer *StateTracer) CaptureTxStart(gasLimit uint64) {}
+func (tracer *StateTracer) CaptureTxEnd(gasUsed uint64)    {}
