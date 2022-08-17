@@ -29,9 +29,9 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/sec-bit/mfer-safe/constant"
-	"github.com/sec-bit/mfer-safe/mfersigner"
-	"github.com/sec-bit/mfer-safe/mferstate"
+	"github.com/sec-bit/mfer-node/constant"
+	"github.com/sec-bit/mfer-node/mfersigner"
+	"github.com/sec-bit/mfer-node/mferstate"
 )
 
 type MferEVM struct {

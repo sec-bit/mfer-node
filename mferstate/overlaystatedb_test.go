@@ -8,7 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/sec-bit/mfer-safe/utils"
+	"github.com/sec-bit/mfer-node/utils"
 )
 
 const RPC_URL = "http://tractor.local:8545"

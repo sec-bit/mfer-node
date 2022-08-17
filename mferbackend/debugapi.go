@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/kataras/golog"
-	"github.com/sec-bit/mfer-safe/mfertracer"
+	"github.com/sec-bit/mfer-node/mfertracer"
 )
 
 type ExecutionResult struct {

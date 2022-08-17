@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/kataras/golog"
-	"github.com/sec-bit/mfer-safe/mferstate"
+	"github.com/sec-bit/mfer-node/mferstate"
 )
 
 // TransactionArgs represents the arguments to construct a new transaction

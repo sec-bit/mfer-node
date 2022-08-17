@@ -1,4 +1,4 @@
-module github.com/sec-bit/mfer-safe
+module github.com/sec-bit/mfer-node
 
 go 1.17
 

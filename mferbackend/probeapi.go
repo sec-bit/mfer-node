@@ -11,7 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/sec-bit/mfer-safe/mfertracer"
+	"github.com/sec-bit/mfer-node/mfertracer"
 )
 
 type ProbeAPI struct {
