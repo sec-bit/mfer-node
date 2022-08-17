@@ -397,3 +397,22 @@ func (s *EthAPI) BlockNumber() hexutil.Uint64 {
 	}
 	return hexutil.Uint64(bn + 1)
 }
+
+type feeHistoryResult struct {
+	OldestBlock  *hexutil.Big     `json:"oldestBlock"`
+	Reward       [][]*hexutil.Big `json:"reward,omitempty"`
+	BaseFee      []*hexutil.Big   `json:"baseFeePerGas,omitempty"`
+	GasUsedRatio []float64        `json:"gasUsedRatio"`
+}
+
+func (s *EthAPI) FeeHistory(ctx context.Context, blockCount rpc.DecimalOrHex, lastBlock rpc.BlockNumber, rewardPercentiles []float64) (*feeHistoryResult, error) {
+	bn := uint64(s.BlockNumber())
+	if bn > uint64(blockCount) {
+		bn = bn - uint64(blockCount)
+	}
+	ret := &feeHistoryResult{
+		OldestBlock:  (*hexutil.Big)(big.NewInt(int64(bn))),
+		GasUsedRatio: make([]float64, blockCount),
+	}
+	return ret, nil
+}
