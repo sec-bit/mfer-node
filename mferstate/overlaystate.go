@@ -62,7 +62,6 @@ type OverlayState struct {
 	accessedAccountsMutex *sync.RWMutex
 	accessedAccounts      map[common.Address]bool
 
-	logs                            []*types.Log
 	txLogs                          map[common.Hash][]*types.Log
 	receipts                        map[common.Hash]*types.Receipt
 	currentTxHash, currentBlockHash common.Hash
@@ -76,10 +75,7 @@ type OverlayState struct {
 	upstreamReqCh chan bool
 	clientReqCh   chan bool
 
-	shouldStop          chan bool
-	shoudRevertSnapshot chan bool
-	reason              string
-
+	reason  string
 	stateID uint64
 }
 
@@ -99,7 +95,6 @@ func NewOverlayState(ctx context.Context, ec *rpc.Client, bn *uint64, keyCacheFi
 		accessedAccounts:      make(map[common.Address]bool),
 
 		txLogs:           make(map[common.Hash][]*types.Log),
-		logs:             make([]*types.Log, 0),
 		receipts:         make(map[common.Hash]*types.Receipt),
 		deriveCnt:        0,
 		storageReqChan:   make(chan chan StorageReq, 500),
@@ -108,11 +103,8 @@ func NewOverlayState(ctx context.Context, ec *rpc.Client, bn *uint64, keyCacheFi
 
 		upstreamReqCh: make(chan bool, 100),
 		clientReqCh:   make(chan bool, 100),
-
-		shouldStop: make(chan bool),
 	}
 	go state.timeSlot()
-	// go state.statistics()
 	return state
 }
 
@@ -121,57 +113,23 @@ func (s *OverlayState) Derive(reason string) *OverlayState {
 		parent:           s,
 		scratchPad:       make(map[string][]byte),
 		txLogs:           make(map[common.Hash][]*types.Log),
-		logs:             make([]*types.Log, len(s.logs)),
 		receipts:         make(map[common.Hash]*types.Receipt),
 		deriveCnt:        s.deriveCnt + 1,
 		currentTxHash:    s.currentTxHash,
 		currentBlockHash: s.currentBlockHash,
 
-		stateID:    rand.Uint64(),
-		shouldStop: s.shouldStop,
-		reason:     reason,
+		stateID: rand.Uint64(),
+		reason:  reason,
 	}
-	golog.Debugf("derive from: %s, id: %02x, depth: %d", reason, state.stateID, state.deriveCnt)
-	copy(state.logs, s.logs)
-	for k, v := range s.receipts {
-		state.receipts[k] = v
-	}
-	// go state.printStateID()
+	golog.Debugf("derive reason: %s from: %02x, id: %02x, depth: %d", reason, s.stateID, state.stateID, state.deriveCnt)
 	return state
 }
 
 func (s *OverlayState) Parent() *OverlayState {
 	// s.scratchPad = make(map[string][]byte)
-	golog.Debugf("poping id: %d, reason: %s", s.stateID, s.reason)
+	golog.Debugf("poping id: %02x, reason: %s", s.stateID, s.reason)
 	// close(s.shouldStop)
 	return s.parent
-}
-
-func (s *OverlayState) printStateID() {
-	for {
-		select {
-		// case <-time.After(time.Second * 2):
-		// 	parentID := uint64(0)
-		// 	if s.parent == nil {
-		// 		parentID = 0
-		// 	} else {
-		// 		parentID = s.parent.stateID
-		// 	}
-		// 	log.Printf("stateID: %02x, parentID: %02x, reason: %s", s.stateID, parentID, s.reason)
-		case <-s.shouldStop:
-			s.scratchPad = nil
-			s.logs = nil
-			s.txLogs = nil
-			log.Printf("stateID: %02x, reason: %s STOPPED", s.stateID, s.reason)
-			return
-		case <-s.shoudRevertSnapshot:
-			s.scratchPad = nil
-			s.logs = nil
-			s.txLogs = nil
-			log.Printf("stateID: %02x, reason: %s STOPPED [revert snapshot]", s.stateID, s.reason)
-			return
-		}
-	}
 }
 
 type RequestType int

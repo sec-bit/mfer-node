@@ -290,7 +290,6 @@ func (s *MferActionAPI) SimulateSafeExec(ctx context.Context, safeOwners []commo
 	txHash := crypto.Keccak256Hash([]byte("psuedoTransaction"))
 	simulationStateDB.StartLogCollection(txHash, crypto.Keccak256Hash([]byte("blockhash")))
 	result, err := s.b.EVM.DoCall(&msg, true, simulationStateDB)
-	simulationStateDB.FinishLogCollection()
 	spew.Dump(result, err)
 	msData.ExecResult = result
 	if err != nil {

@@ -6,12 +6,14 @@ import (
 	"log"
 	"math/big"
 
+	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/kataras/golog"
 	"github.com/sec-bit/mfer-safe/constant"
+	"github.com/sec-bit/mfer-safe/utils"
 )
 
 type OverlayStateDB struct {
@@ -42,13 +44,12 @@ func NewOverlayStateDB(rpcClient *rpc.Client, blockNumber *uint64, keyCacheFileP
 }
 
 func (db *OverlayStateDB) InitState(fetchNewState bool) {
+	utils.PrintMemUsage("[before init]")
 	tmpDB := db.state
 	reason := "reset and protect underlying"
 	for {
 		if tmpDB.parent == nil {
 			db.state = tmpDB
-			db.DestroyState()
-			db.state.shouldStop = make(chan bool)
 
 			golog.Infof("Resetting Scratchpad... BN: %d", *db.stateBN)
 			if fetchNewState {
@@ -61,9 +62,13 @@ func (db *OverlayStateDB) InitState(fetchNewState bool) {
 			break
 		} else {
 			// log.Printf("pop scratchPad from: %d", tmpDB.deriveCnt)
+			tmpDB.txLogs = nil
+			tmpDB.scratchPad = nil
+			tmpDB.receipts = nil
 			tmpDB = tmpDB.Parent()
 		}
 	}
+	utils.PrintMemUsage("[current]")
 }
 
 func (db *OverlayStateDB) CreateAccount(account common.Address) {}
@@ -221,7 +226,6 @@ func (db *OverlayStateDB) AddSlotToAccessList(addr common.Address, slot common.H
 
 func (db *OverlayStateDB) RevertToSnapshot(revisionID int) {
 	tmpState := db.state.Parent()
-	close(db.state.shoudRevertSnapshot)
 	golog.Infof("Rollbacking... revision: %d, currentID: %d", revisionID, tmpState.deriveCnt)
 	for {
 		if tmpState.deriveCnt+1 == int64(revisionID) {
@@ -235,7 +239,6 @@ func (db *OverlayStateDB) RevertToSnapshot(revisionID int) {
 
 func (db *OverlayStateDB) Snapshot() int {
 	newOverlayState := db.state.Derive("snapshot")
-	newOverlayState.shoudRevertSnapshot = make(chan bool)
 	db.state = newOverlayState
 	revisionID := int(newOverlayState.deriveCnt)
 	return revisionID
@@ -265,12 +268,7 @@ func (db *OverlayStateDB) Clone() *OverlayStateDB {
 		refundGas: 0,
 		state:     db.state.Derive("clone"),
 	}
-	cpy.state.shouldStop = make(chan bool)
 	return cpy
-}
-
-func (db *OverlayStateDB) DestroyState() {
-	close(db.state.shouldStop)
 }
 
 func (db *OverlayStateDB) CloneFromRoot() *OverlayStateDB {
@@ -304,19 +302,20 @@ func (db *OverlayStateDB) StateBlockNumber() (cnt uint64) {
 }
 
 func (db *OverlayStateDB) AddLog(vLog *types.Log) {
-	// spew.Dump(vLog)
-	db.state.logs = append(db.state.logs, vLog)
+	golog.Debugf("StateID: %02x, AddLog: %s", db.state.stateID, spew.Sdump(vLog))
+	db.state.txLogs[db.state.currentTxHash] = append(db.state.txLogs[db.state.currentTxHash], vLog)
 }
 
 func (db *OverlayStateDB) GetLogs(txHash common.Hash) []*types.Log {
 	tmpStateDB := db.state
 	logs := make([]*types.Log, 0)
 	for {
-		if tmpStateDB.txLogs[txHash] != nil {
-			logs = append(tmpStateDB.txLogs[txHash], logs...)
-		}
-		if tmpStateDB.parent == nil {
+		if tmpStateDB == nil {
 			break
+		}
+		if tmpStateDB.txLogs[txHash] != nil {
+			golog.Debugf("StateID: %02x, GetLogs: %s", db.state.stateID, spew.Sdump(tmpStateDB.txLogs[txHash]))
+			logs = append(tmpStateDB.txLogs[txHash], logs...)
 		}
 		tmpStateDB = tmpStateDB.parent
 	}
@@ -324,6 +323,7 @@ func (db *OverlayStateDB) GetLogs(txHash common.Hash) []*types.Log {
 }
 
 func (db *OverlayStateDB) AddReceipt(txHash common.Hash, receipt *types.Receipt) {
+	golog.Debugf("StateID: %02x, AddReceipt: %s", db.state.stateID, spew.Sdump(receipt))
 	db.state.receipts[txHash] = receipt
 }
 
@@ -350,15 +350,6 @@ func (db *OverlayStateDB) ForEachStorage(account common.Address, callback func(c
 func (db *OverlayStateDB) StartLogCollection(txHash, blockHash common.Hash) {
 	db.state.currentTxHash = txHash
 	db.state.currentBlockHash = blockHash
-	db.state.logs = make([]*types.Log, 0)
-}
-
-func (db *OverlayStateDB) FinishLogCollection() {
-	for i := range db.state.logs {
-		db.state.logs[i].BlockHash = db.state.currentBlockHash
-		db.state.logs[i].TxHash = db.state.currentTxHash
-	}
-	db.state.txLogs[db.state.currentTxHash] = db.state.logs
 }
 
 func (db *OverlayStateDB) SetBatchSize(batchSize int) {

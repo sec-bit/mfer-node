@@ -470,10 +470,7 @@ func (a *MferEVM) ExecuteTxs(txs types.Transactions, stateDB vm.StateDB, config 
 		}
 		receipt.Logs = append(txExecutionLogs, traceLogs)
 		receipt.TransactionIndex = uint(txIndex)
-		// spew.Dump(receipt)
 		stateDB.(*mferstate.OverlayStateDB).AddLog(traceLogs)
-		stateDB.(*mferstate.OverlayStateDB).FinishLogCollection()
-
 		stateDB.(*mferstate.OverlayStateDB).AddReceipt(tx.Hash(), receipt)
 		// log.Printf("exec final depth: %d, snapshot revision id: %d", stateDB.(*mferstate.OverlayStateDB).GetOverlayDepth(), snapshot)
 		// stateDB.(*mferstate.OverlayStateDB).MergeTo(1)

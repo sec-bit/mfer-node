@@ -118,7 +118,6 @@ func (s *EthAPI) Call(ctx context.Context, args TransactionArgs, blockNrOrHash r
 		return nil, err
 	}
 	stateDB := s.b.EVM.StateDB.Clone()
-	defer stateDB.DestroyState()
 	if blockNrOrHash.BlockNumber != nil && *blockNrOrHash.BlockNumber != -1 {
 		bnHex := fmt.Sprintf("0x%x", *blockNrOrHash.BlockNumber)
 		golog.Infof("Call with block number %s", bnHex)
@@ -162,7 +161,6 @@ func (s *EthAPI) EstimateGas(ctx context.Context, args TransactionArgs, blockNrO
 	// }
 	s.b.EVM.SetTracer(tracer)
 	stateDB := s.b.EVM.StateDB.Clone()
-	defer stateDB.DestroyState()
 	defer tracer.Reset()
 	result, err := s.b.EVM.DoCall(&msg, true, stateDB)
 	// ret, resError := tracer.GetResult()
@@ -225,7 +223,7 @@ func (s *EthAPI) SendTransaction(ctx context.Context, args TransactionArgs) (com
 
 	signer := mfersigner.NewSigner(s.b.EVM.ChainID().Int64())
 
-	spew.Dump(args)
+	golog.Debugf("Tx: %s", spew.Sdump(args))
 
 	tx, err := args.ToTransaction().WithSignature(signer, from.Bytes())
 	if err != nil {
