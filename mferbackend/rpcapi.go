@@ -3,6 +3,7 @@ package mferbackend
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"math/big"
@@ -16,6 +17,7 @@ import (
 	"github.com/kataras/golog"
 	"github.com/sec-bit/mfer-node/constant"
 	"github.com/sec-bit/mfer-node/mfersigner"
+	"github.com/sec-bit/mfer-node/mferstate"
 	"github.com/sec-bit/mfer-node/mfertracer"
 )
 
@@ -111,7 +113,58 @@ func (s *EthAPI) preprocessArgs(args TransactionArgs) TransactionArgs {
 	return args
 }
 
-func (s *EthAPI) Call(ctx context.Context, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *StateOverride) (hexutil.Bytes, error) {
+func toCallArg(msg TransactionArgs) interface{} {
+	arg := map[string]interface{}{
+		"from": msg.From,
+		"to":   msg.To,
+	}
+	if msg.Data != nil && len(*msg.Data) > 0 {
+		arg["data"] = *msg.Data
+	}
+	if msg.Value != nil {
+		arg["value"] = msg.Value
+	}
+	if msg.Gas != nil && *msg.Gas != 0 {
+		arg["gas"] = *msg.Gas
+	}
+	if msg.GasPrice != nil {
+		arg["gasPrice"] = *msg.GasPrice
+	}
+	return arg
+}
+
+func (s *EthAPI) Call(ctx context.Context, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *mferstate.StateOverride) (hexutil.Bytes, error) {
+	if s.b.Passthrough {
+		return s.CallPassthrough(ctx, args, blockNrOrHash, nil)
+	} else {
+		return s.CallLocal(ctx, args, blockNrOrHash, overrides)
+	}
+}
+
+func (s *EthAPI) CallPassthrough(ctx context.Context, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *mferstate.StateOverride) (hexutil.Bytes, error) {
+	args = s.preprocessArgs(args)
+	var hex hexutil.Bytes
+	diff := s.b.EVM.StateDB.GetStateDiff()
+	var stateOverride *mferstate.StateOverride
+	if overrides != nil {
+		stateOverride = overrides
+	} else {
+		stateOverride = &diff
+	}
+	stateBN := s.b.EVM.StateDB.StateBlockNumber()
+	stateBNH := hexutil.EncodeUint64(stateBN)
+	_ = stateBNH
+	diffB, err2 := json.Marshal(diff)
+	golog.Infof("StateDiff: %s", string(diffB))
+	err := s.b.EVM.RpcClient.CallContext(ctx, &hex, "eth_call", toCallArg(args), "latest", stateOverride)
+	if err != nil {
+		golog.Infof("err: %v,hex: %v, args: %v, bn: %s, stateDiff: %s, err2: %v", err, hex, toCallArg(args), stateBNH, string(diffB), err2)
+		return nil, err
+	}
+	return hex, nil
+}
+
+func (s *EthAPI) CallLocal(ctx context.Context, args TransactionArgs, blockNrOrHash rpc.BlockNumberOrHash, overrides *mferstate.StateOverride) (hexutil.Bytes, error) {
 	args = s.preprocessArgs(args)
 	msg, err := args.ToMessage(0, nil)
 	if err != nil {
@@ -163,11 +216,6 @@ func (s *EthAPI) EstimateGas(ctx context.Context, args TransactionArgs, blockNrO
 	stateDB := s.b.EVM.StateDB.Clone()
 	defer tracer.Reset()
 	result, err := s.b.EVM.DoCall(&msg, true, stateDB)
-	// ret, resError := tracer.GetResult()
-	// if resError != nil {
-	// 	return 0, err
-	// }
-	// log.Printf("trace: %s", ret)
 	if err != nil {
 		return 0, err
 	}

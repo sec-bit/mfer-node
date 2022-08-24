@@ -8,6 +8,7 @@ import (
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -16,6 +17,16 @@ import (
 	"github.com/sec-bit/mfer-node/utils"
 )
 
+type OverrideAccount struct {
+	Nonce     *hexutil.Uint64              `json:"nonce,omitempty"`
+	Code      *hexutil.Bytes               `json:"code,omitempty"`
+	Balance   **hexutil.Big                `json:"balance,omitempty"`
+	State     *map[common.Hash]common.Hash `json:"state,omitempty"`
+	StateDiff *map[common.Hash]common.Hash `json:"stateDiff,omitempty"`
+}
+
+// StateOverride is the collection of overridden accounts.
+type StateOverride map[common.Address]*OverrideAccount
 type OverlayStateDB struct {
 	ctx  context.Context
 	ec   *rpc.Client
@@ -284,6 +295,9 @@ func (db *OverlayStateDB) CloneFromRoot() *OverlayStateDB {
 }
 
 func (db *OverlayStateDB) CacheSize() (size int) {
+	if db.state == nil {
+		return -1
+	}
 	root := db.state.getRootState()
 	root.scratchPadMutex.RLock()
 	defer root.scratchPadMutex.RUnlock()
@@ -294,6 +308,9 @@ func (db *OverlayStateDB) CacheSize() (size int) {
 }
 
 func (db *OverlayStateDB) RPCRequestCount() (cnt int64) {
+	if db.state == nil {
+		return -1
+	}
 	return db.state.getRootState().rpcCnt
 }
 
@@ -354,4 +371,64 @@ func (db *OverlayStateDB) StartLogCollection(txHash, blockHash common.Hash) {
 
 func (db *OverlayStateDB) SetBatchSize(batchSize int) {
 	db.state.getRootState().batchSize = batchSize
+}
+
+func (db *OverlayStateDB) getMergedScratchPad() map[string][]byte {
+	mergedScratchPad := make(map[string][]byte)
+	tmpState := db.state
+	for {
+		if tmpState.parent == nil {
+			break
+		}
+
+		for k, v := range tmpState.scratchPad {
+			if _, ok := mergedScratchPad[k]; ok {
+				continue
+			}
+			mergedScratchPad[k] = v
+		}
+		tmpState = tmpState.parent
+	}
+	return mergedScratchPad
+}
+
+func (s *OverlayStateDB) GetStateDiff() StateOverride {
+	mergedScratchPad := s.getMergedScratchPad()
+	accounts := make(StateOverride)
+	clonedState := s.CloneFromRoot()
+	clonedState.state.scratchPad = mergedScratchPad
+	for k := range mergedScratchPad {
+		key := common.BytesToHash([]byte(k)[:32])
+		account := common.BytesToAddress([]byte(k)[32 : 32+20])
+		var override *OverrideAccount
+		if _override, ok := accounts[account]; !ok {
+			tmp := &OverrideAccount{}
+			accounts[account] = tmp
+			override = tmp
+		} else {
+			override = _override
+		}
+		switch key {
+		case BALANCE_KEY:
+			balance := (*hexutil.Big)(clonedState.GetBalance(account))
+			override.Balance = &balance
+		case NONCE_KEY:
+			nonce := clonedState.GetNonce(account)
+			override.Nonce = (*hexutil.Uint64)(&nonce)
+		case CODE_KEY:
+			code := clonedState.GetCode(account)
+			override.Code = (*hexutil.Bytes)(&code)
+			// scratchpadKey = calcKey(CODE_KEY, account)
+		case STATE_KEY:
+			stateKey := common.BytesToHash([]byte(k)[32+20 : 32+20+32])
+			stateValue := clonedState.GetState(account, stateKey)
+			if override.StateDiff == nil {
+				stateDiff := make(map[common.Hash]common.Hash)
+				override.StateDiff = &stateDiff
+			}
+			(*override.StateDiff)[stateKey] = stateValue
+			// scratchpadKey = calcStateKey(account, key)
+		}
+	}
+	return accounts
 }

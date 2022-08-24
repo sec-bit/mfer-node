@@ -12,6 +12,7 @@ type MferBackend struct {
 	TxPool              *mfertxpool.MferTxPool
 	ImpersonatedAccount common.Address
 	Randomized          bool
+	Passthrough         bool
 }
 
 func NewMferBackend(e *mferevm.MferEVM, txPool *mfertxpool.MferTxPool, impersonatedAccount common.Address, randomize bool) *MferBackend {

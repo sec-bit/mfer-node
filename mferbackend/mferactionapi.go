@@ -18,6 +18,7 @@ import (
 	"github.com/kataras/golog"
 	"github.com/sec-bit/mfer-node/constant"
 	"github.com/sec-bit/mfer-node/mfersigner"
+	"github.com/sec-bit/mfer-node/mferstate"
 	"github.com/sec-bit/mfer-node/multisend"
 )
 
@@ -87,6 +88,19 @@ func (s *MferActionAPI) ToggleRandAddr(enable bool) {
 
 func (s *MferActionAPI) RandAddrEnabled() bool {
 	return s.b.Randomized
+}
+
+func (s *MferActionAPI) TogglePassthrough(enable bool) {
+	golog.Infof("toggle passthrough %v", enable)
+	s.b.Passthrough = enable
+}
+
+func (s *MferActionAPI) PassthoughEnabled() bool {
+	return s.b.Passthrough
+}
+
+func (s *MferActionAPI) GetStateDiff() mferstate.StateOverride {
+	return s.b.EVM.StateDB.GetStateDiff()
 }
 
 func (s *MferActionAPI) PrintMoney(account common.Address) {
