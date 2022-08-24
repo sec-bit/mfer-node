@@ -385,7 +385,7 @@ func (a *MferEVM) ExecuteTxs(txs types.Transactions, stateDB vm.StateDB, config 
 				}
 			}
 			// Constuct the JavaScript tracer to execute with
-			if tracer, err = tracers.New(*config.Tracer, txctx); err != nil {
+			if tracer, err = tracers.New(*config.Tracer, txctx, config.TracerConfig); err != nil {
 				return nil
 			}
 			// Handle timeouts and RPC cancellations
@@ -399,7 +399,7 @@ func (a *MferEVM) ExecuteTxs(txs types.Transactions, stateDB vm.StateDB, config 
 			defer cancel()
 
 		case config == nil:
-			tracer, err = tracers.New("callTracer", txctx)
+			tracer, err = tracers.New("callTracer", txctx, nil)
 			if err != nil {
 				log.Panic(err)
 			}

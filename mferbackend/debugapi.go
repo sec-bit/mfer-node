@@ -117,7 +117,7 @@ func (s *DebugAPI) TraceTransaction(ctx context.Context, txHash common.Hash, con
 			}
 		}
 		// Constuct the JavaScript tracer to execute with
-		if tracer, err = tracers.New(*config.Tracer, txctx); err != nil {
+		if tracer, err = tracers.New(*config.Tracer, txctx, config.TracerConfig); err != nil {
 			return nil, err
 		}
 		// Handle timeouts and RPC cancellations

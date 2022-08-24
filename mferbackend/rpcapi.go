@@ -155,10 +155,9 @@ func (s *EthAPI) CallPassthrough(ctx context.Context, args TransactionArgs, bloc
 	stateBNH := hexutil.EncodeUint64(stateBN)
 	_ = stateBNH
 	diffB, err2 := json.Marshal(diff)
-	golog.Infof("StateDiff: %s", string(diffB))
 	err := s.b.EVM.RpcClient.CallContext(ctx, &hex, "eth_call", toCallArg(args), "latest", stateOverride)
 	if err != nil {
-		golog.Infof("err: %v,hex: %v, args: %v, bn: %s, stateDiff: %s, err2: %v", err, hex, toCallArg(args), stateBNH, string(diffB), err2)
+		golog.Debugf("err: %v,hex: %v, args: %v, bn: %s, stateDiff: %s, err2: %v", err, hex, toCallArg(args), stateBNH, string(diffB), err2)
 		return nil, err
 	}
 	return hex, nil
@@ -208,10 +207,6 @@ func (s *EthAPI) EstimateGas(ctx context.Context, args TransactionArgs, blockNrO
 	}
 	tracer := &mfertracer.KeccakTracer{}
 
-	// tracer, err := tracers.New("callTracer", new(tracers.Context))
-	// if err != nil {
-	// 	log.Panic(err)
-	// }
 	s.b.EVM.SetTracer(tracer)
 	stateDB := s.b.EVM.StateDB.Clone()
 	defer tracer.Reset()

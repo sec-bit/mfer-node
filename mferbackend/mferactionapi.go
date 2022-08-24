@@ -295,7 +295,7 @@ func (s *MferActionAPI) SimulateSafeExec(ctx context.Context, safeOwners []commo
 		true,
 	)
 
-	tracer, err := tracers.New("callTracer", new(tracers.Context))
+	tracer, err := tracers.New("callTracer", new(tracers.Context), nil)
 	if err != nil {
 		log.Panic(err)
 	}
