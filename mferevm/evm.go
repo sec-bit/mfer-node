@@ -148,7 +148,7 @@ func (a *MferEVM) SetBlockNumber(bn uint64) {
 }
 
 func (a *MferEVM) ResetToRoot() {
-	a.StateDB.InitState(false)
+	a.StateDB.InitState(false, false)
 	a.StateDB.InitFakeAccounts()
 	a.gasPool = new(core.GasPool)
 	a.gasPool.AddGas(a.vmContext.GasLimit)
@@ -192,7 +192,7 @@ func (a *MferEVM) Prepare() error {
 	if a.StateDB == nil {
 		a.StateDB = mferstate.NewOverlayStateDB(a.RpcClient, a.blockNumber, a.keyCacheFilePath, a.batchSize)
 	}
-	a.StateDB.InitState(true)
+	a.StateDB.InitState(true, false)
 	a.StateDB.InitFakeAccounts()
 	a.gasPool = new(core.GasPool)
 	a.gasPool.AddGas(a.vmContext.GasLimit)

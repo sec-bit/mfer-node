@@ -26,6 +26,10 @@ type MferActionAPI struct {
 	b *MferBackend
 }
 
+func (s *MferActionAPI) ClearKeyCache() {
+	s.b.EVM.StateDB.InitState(true, true)
+}
+
 func (s *MferActionAPI) ResetState() {
 	s.b.EVM.StateLock()
 	defer s.b.EVM.StateUnlock()

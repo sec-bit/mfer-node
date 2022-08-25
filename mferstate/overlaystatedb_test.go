@@ -29,7 +29,7 @@ func TestDBDerive(t *testing.T) {
 
 	// vmCfg := vm.Config{}
 
-	stateDB.InitState(true)
+	stateDB.InitState(true, false)
 	// msg := types.NewMessage(constant.FAKE_ACCOUNT_0, &constant.FAKE_ACCOUNT_1, 0, big.NewInt(0), 999999999, big.NewInt(0), nil, nil, nil, nil, true)
 	for j := 0; j < 10; j++ {
 		state := stateDB.state

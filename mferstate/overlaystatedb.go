@@ -58,10 +58,14 @@ func NewOverlayStateDB(rpcClient *rpc.Client, blockNumber *uint64, keyCacheFileP
 	return db
 }
 
-func (db *OverlayStateDB) resetScratchPad() {
+func (db *OverlayStateDB) resetScratchPad(clearKeyCache bool) {
 	s := db.state
 	s.scratchPadMutex.Lock()
 	golog.Debug("[reset scratchpad] lock scratchPad")
+	defer func() {
+		golog.Debug("[reset scratchpad] unlock scratchPad")
+		s.scratchPadMutex.Unlock()
+	}()
 
 	f, err := os.OpenFile(db.cacheFilePath, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
@@ -69,6 +73,13 @@ func (db *OverlayStateDB) resetScratchPad() {
 	}
 	defer f.Close()
 	fmt.Printf("cache saved @ %s\n", db.cacheFilePath)
+
+	if clearKeyCache {
+		s.scratchPad = make(map[string][]byte)
+		f.Truncate(0)
+		f.Seek(0, 0)
+		return
+	}
 
 	golog.Debug("[reset scratchpad] load cached scratchPad key")
 	scanner := bufio.NewScanner(f)
@@ -123,7 +134,6 @@ func (db *OverlayStateDB) resetScratchPad() {
 	accountResults, err := s.loadAccountBatchRPC(accounts)
 	if err != nil {
 		golog.Errorf("loadAccountBatchRPC failed: %v", err)
-		s.scratchPadMutex.Unlock()
 		return
 	}
 	for i := range accountResults {
@@ -136,18 +146,15 @@ func (db *OverlayStateDB) resetScratchPad() {
 		s.scratchPad[calcKey(CODEHASH_KEY, accounts[i])] = codeHash.Bytes()
 	}
 	golog.Info("[reset scratchpad] account prefetch done")
-
-	s.scratchPadMutex.Unlock()
-	golog.Debug("[reset scratchpad] unlock scratchPad")
 }
 
-func (db *OverlayStateDB) InitState(fetchNewState bool) {
+func (db *OverlayStateDB) InitState(fetchNewState, clearCache bool) {
 	utils.PrintMemUsage("[before init]")
 	reason := "reset and protect underlying"
 	db.state = db.state.getRootState()
 	golog.Infof("Resetting Scratchpad... BN: %d", *db.stateBN)
 	if fetchNewState {
-		db.resetScratchPad()
+		db.resetScratchPad(clearCache)
 	}
 	golog.Info(reason)
 	db.state = db.state.Derive(reason)
