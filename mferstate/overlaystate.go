@@ -1,13 +1,10 @@
 package mferstate
 
 import (
-	"bufio"
 	"context"
 	"fmt"
-	"log"
 	"math/big"
 	"math/rand"
-	"os"
 	"sync"
 	"time"
 
@@ -56,7 +53,6 @@ type OverlayState struct {
 	// lastBN          *uint64
 	scratchPadMutex *sync.RWMutex
 	scratchPad      map[string][]byte
-	cacheFilePath   string
 	batchSize       int
 
 	accessedAccountsMutex *sync.RWMutex
@@ -79,7 +75,7 @@ type OverlayState struct {
 	stateID uint64
 }
 
-func NewOverlayState(ctx context.Context, ec *rpc.Client, bn *uint64, keyCacheFilePath string, batchSize int) *OverlayState {
+func NewOverlayState(ctx context.Context, ec *rpc.Client, bn *uint64, batchSize int) *OverlayState {
 	state := &OverlayState{
 		ctx:             ctx,
 		ec:              ec,
@@ -88,7 +84,6 @@ func NewOverlayState(ctx context.Context, ec *rpc.Client, bn *uint64, keyCacheFi
 		bn:              bn,
 		scratchPadMutex: &sync.RWMutex{},
 		scratchPad:      make(map[string][]byte),
-		cacheFilePath:   keyCacheFilePath,
 		batchSize:       batchSize,
 
 		accessedAccountsMutex: &sync.RWMutex{},
@@ -455,89 +450,6 @@ func calcStateKey(account common.Address, key common.Hash) string {
 	return stateKey
 }
 
-func (s *OverlayState) resetScratchPad() {
-	s.scratchPadMutex.Lock()
-	golog.Debug("[reset scratchpad] lock scratchPad")
-
-	f, err := os.OpenFile(s.cacheFilePath, os.O_RDWR|os.O_CREATE, 0666)
-	if err != nil {
-		log.Panicf("openfile error: %v", err)
-	}
-	defer f.Close()
-	fmt.Printf("cache saved @ %s\n", s.cacheFilePath)
-
-	golog.Debug("[reset scratchpad] load cached scratchPad key")
-	scanner := bufio.NewScanner(f)
-	for scanner.Scan() {
-		txt := scanner.Text()
-		s.scratchPad[string(STATE_KEY.Bytes())+string(common.Hex2Bytes(txt))] = []byte{}
-		if scanner.Err() != nil {
-			break
-		}
-	}
-
-	cachedStr := ""
-	reqs := make([]*StorageReq, 0)
-	for key := range s.scratchPad {
-		keyBytes := []byte(key)
-		if len(keyBytes) == 32+20+32 && common.BytesToHash(keyBytes[:32]) == STATE_KEY {
-			acc := common.BytesToAddress(keyBytes[32 : 32+20])
-			s.accessedAccountsMutex.Lock()
-			s.accessedAccounts[acc] = true
-			s.accessedAccountsMutex.Unlock()
-			key := common.BytesToHash(keyBytes[32+20:])
-			reqs = append(reqs, &StorageReq{Address: acc, Key: key})
-			cachedStr += (common.Bytes2Hex(keyBytes[32:]) + "\n")
-			if err != nil {
-				golog.Errorf("write string err: %v", err)
-			}
-		}
-	}
-
-	err = s.loadStateBatchRPC(reqs)
-	if err != nil {
-		log.Panic(err)
-	}
-	f.Truncate(0)
-	f.Seek(0, 0)
-	f.WriteString(cachedStr)
-
-	for _, result := range reqs {
-		stateKey := calcStateKey(result.Address, result.Key)
-		s.scratchPad[stateKey] = result.Value[:]
-	}
-
-	golog.Infof("[reset scratchpad] state prefetch done, slot num: %d", len(s.scratchPad))
-	golog.Infof("[reset scratchpad] prefetching %d accounts", len(s.accessedAccounts))
-	accounts := make([]common.Address, 0)
-	s.accessedAccountsMutex.RLock()
-	for k := range s.accessedAccounts {
-		accounts = append(accounts, k)
-	}
-	s.accessedAccountsMutex.RUnlock()
-
-	accountResults, err := s.loadAccountBatchRPC(accounts)
-	if err != nil {
-		golog.Errorf("loadAccountBatchRPC failed: %v", err)
-		s.scratchPadMutex.Unlock()
-		return
-	}
-	for i := range accountResults {
-		nonce := uint64(accountResults[i].Nonce)
-		balance := accountResults[i].Balance.ToInt()
-		codeHash := accountResults[i].CodeHash
-		s.scratchPad[calcKey(BALANCE_KEY, accounts[i])] = balance.Bytes()
-		s.scratchPad[calcKey(NONCE_KEY, accounts[i])] = big.NewInt(int64(nonce)).Bytes()
-		s.scratchPad[calcKey(CODE_KEY, accounts[i])] = accountResults[i].Code
-		s.scratchPad[calcKey(CODEHASH_KEY, accounts[i])] = codeHash.Bytes()
-	}
-	golog.Info("[reset scratchpad] account prefetch done")
-
-	s.scratchPadMutex.Unlock()
-	golog.Debug("[reset scratchpad] unlock scratchPad")
-
-}
-
 func (s *OverlayState) get(account common.Address, action RequestType, key common.Hash) ([]byte, error) {
 	// if s.parent == nil && *s.bn != *s.lastBN {
 	// 	golog.Infof("State BN: %d", *s.bn)
@@ -558,55 +470,24 @@ func (s *OverlayState) get(account common.Address, action RequestType, key commo
 	}
 
 	if s.parent == nil {
-		// s.clientReqCh <- true
 		s.scratchPadMutex.Lock()
 		if val, ok := s.scratchPad[scratchpadKey]; ok {
-			// if action == GET_STATE {
-			// log.Printf("got state at root, acc[%s].%s=0x%02x\nstateKey: %02x", account.Hex(), key.Hex(), val, scratchpadKey)
-			// }
 			s.scratchPadMutex.Unlock()
 			return val, nil
 		}
 		s.scratchPadMutex.Unlock()
 
 		var res []byte
-		// UPDATE_BN_AND_RETRY:
 		switch action {
 		case GET_STATE:
 			result := s.loadState(account, key)
-			// result, err := s.loadState(account, key)
-			// if err != nil {
-			// 	log.Print(err)
-			// 	bn, err := s.conn.BlockNumber(s.ctx)
-			// 	if err != nil {
-			// 		log.Panic(err)
-			// 	}
-			// 	log.Printf("Resetting State... BN: %d", bn)
-			// 	s.resetScratchPad(int64(bn))
-			// 	goto UPDATE_BN_AND_RETRY
-			// }
-
 			s.scratchPadMutex.Lock()
 			s.scratchPad[scratchpadKey] = result.Bytes()
-			// log.Printf("underlying get state, acc[%s].%s=%s", account.Hex(), key.Hex(), result.Hex())
 			s.scratchPadMutex.Unlock()
 			res = result.Bytes()
 
 		case GET_BALANCE, GET_NONCE, GET_CODE, GET_CODEHASH:
-			// log.Printf("underlying get account: %s", account.Hex())
-			// result, err := s.loadAccount(account)
 			result := s.loadAccount(account)
-			// result, code, err := s.loadAccount(account)
-			// if err != nil {
-			// 	log.Print(err)
-			// 	bn, err := s.conn.BlockNumber(s.ctx)
-			// 	if err != nil {
-			// 		log.Panic(err)
-			// 	}
-			// 	log.Printf("Resetting AccountState... BN: %d", bn)
-			// 	s.resetScratchPad(int64(bn))
-			// 	goto UPDATE_BN_AND_RETRY
-			// }
 			nonce := uint64(result.Nonce)
 			balance := result.Balance.ToInt()
 			codeHash := result.CodeHash
@@ -641,9 +522,6 @@ func (s *OverlayState) get(account common.Address, action RequestType, key commo
 
 	} else {
 		if val, ok := s.scratchPad[scratchpadKey]; ok {
-			// if action == GET_STATE {
-			// log.Printf("got state at [depth:%d stateID: %02x], acc[%s].%s=0x%02x", s.deriveCnt, s.stateID, account.Hex(), key.Hex(), val)
-			// }
 			return val, nil
 		}
 		return s.parent.get(account, action, key)

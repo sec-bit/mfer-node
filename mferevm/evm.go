@@ -278,6 +278,9 @@ func (a *MferEVM) updatePendingBN() {
 	for {
 		select {
 		case <-tickerCheckMissingTireNode.C:
+			if a.StateDB == nil {
+				continue
+			}
 			stateHeight := a.StateDB.StateBlockNumber()
 			golog.Infof("Checking if height@%d(0x%02x) is missing", stateHeight, stateHeight)
 			balance, err := a.Conn.BalanceAt(a.ctx, common.HexToAddress("0x0000000000000000000000000000000000000000"), big.NewInt(int64(stateHeight)))

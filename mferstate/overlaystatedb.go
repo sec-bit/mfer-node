@@ -1,10 +1,13 @@
 package mferstate
 
 import (
+	"bufio"
 	"bytes"
 	"context"
+	"fmt"
 	"log"
 	"math/big"
+	"os"
 
 	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/common"
@@ -28,13 +31,13 @@ type OverrideAccount struct {
 // StateOverride is the collection of overridden accounts.
 type StateOverride map[common.Address]*OverrideAccount
 type OverlayStateDB struct {
-	ctx  context.Context
-	ec   *rpc.Client
-	conn *ethclient.Client
-	// block     int
-	refundGas uint64
-	state     *OverlayState
-	stateBN   *uint64
+	ctx           context.Context
+	ec            *rpc.Client
+	conn          *ethclient.Client
+	cacheFilePath string
+	refundGas     uint64
+	state         *OverlayState
+	stateBN       *uint64
 }
 
 func (db *OverlayStateDB) GetOverlayDepth() int64 {
@@ -43,42 +46,111 @@ func (db *OverlayStateDB) GetOverlayDepth() int64 {
 
 func NewOverlayStateDB(rpcClient *rpc.Client, blockNumber *uint64, keyCacheFilePath string, batchSize int) (db *OverlayStateDB) {
 	db = &OverlayStateDB{
-		ctx:       context.Background(),
-		ec:        rpcClient,
-		conn:      ethclient.NewClient(rpcClient),
-		refundGas: 0,
-		stateBN:   blockNumber,
+		ctx:           context.Background(),
+		ec:            rpcClient,
+		conn:          ethclient.NewClient(rpcClient),
+		cacheFilePath: keyCacheFilePath,
+		refundGas:     0,
+		stateBN:       blockNumber,
 	}
-	state := NewOverlayState(db.ctx, db.ec, db.stateBN, keyCacheFilePath, batchSize).Derive("protect underlying") // protect underlying state
+	state := NewOverlayState(db.ctx, db.ec, db.stateBN, batchSize).Derive("protect underlying") // protect underlying state
 	db.state = state
 	return db
 }
 
-func (db *OverlayStateDB) InitState(fetchNewState bool) {
-	utils.PrintMemUsage("[before init]")
-	tmpDB := db.state
-	reason := "reset and protect underlying"
-	for {
-		if tmpDB.parent == nil {
-			db.state = tmpDB
+func (db *OverlayStateDB) resetScratchPad() {
+	s := db.state
+	s.scratchPadMutex.Lock()
+	golog.Debug("[reset scratchpad] lock scratchPad")
 
-			golog.Infof("Resetting Scratchpad... BN: %d", *db.stateBN)
-			if fetchNewState {
-				db.state.resetScratchPad()
-			}
-			golog.Info(reason)
-			// log.Printf("pre driveID: %d", db.state.deriveCnt)
-			db.state = db.state.Derive(reason)
-			// log.Printf("post driveID: %d", db.state.deriveCnt)
+	f, err := os.OpenFile(db.cacheFilePath, os.O_RDWR|os.O_CREATE, 0666)
+	if err != nil {
+		log.Panicf("openfile error: %v", err)
+	}
+	defer f.Close()
+	fmt.Printf("cache saved @ %s\n", db.cacheFilePath)
+
+	golog.Debug("[reset scratchpad] load cached scratchPad key")
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		txt := scanner.Text()
+		s.scratchPad[string(STATE_KEY.Bytes())+string(common.Hex2Bytes(txt))] = []byte{}
+		if scanner.Err() != nil {
 			break
-		} else {
-			// log.Printf("pop scratchPad from: %d", tmpDB.deriveCnt)
-			tmpDB.txLogs = nil
-			tmpDB.scratchPad = nil
-			tmpDB.receipts = nil
-			tmpDB = tmpDB.Parent()
 		}
 	}
+
+	cachedStr := ""
+	reqs := make([]*StorageReq, 0)
+	for key := range s.scratchPad {
+		keyBytes := []byte(key)
+		if len(keyBytes) == 32+20+32 && common.BytesToHash(keyBytes[:32]) == STATE_KEY {
+			acc := common.BytesToAddress(keyBytes[32 : 32+20])
+			s.accessedAccountsMutex.Lock()
+			s.accessedAccounts[acc] = true
+			s.accessedAccountsMutex.Unlock()
+			key := common.BytesToHash(keyBytes[32+20:])
+			reqs = append(reqs, &StorageReq{Address: acc, Key: key})
+			cachedStr += (common.Bytes2Hex(keyBytes[32:]) + "\n")
+			if err != nil {
+				golog.Errorf("write string err: %v", err)
+			}
+		}
+	}
+
+	err = s.loadStateBatchRPC(reqs)
+	if err != nil {
+		log.Panic(err)
+	}
+	f.Truncate(0)
+	f.Seek(0, 0)
+	f.WriteString(cachedStr)
+
+	for _, result := range reqs {
+		stateKey := calcStateKey(result.Address, result.Key)
+		s.scratchPad[stateKey] = result.Value[:]
+	}
+
+	golog.Infof("[reset scratchpad] state prefetch done, slot num: %d", len(s.scratchPad))
+	golog.Infof("[reset scratchpad] prefetching %d accounts", len(s.accessedAccounts))
+	accounts := make([]common.Address, 0)
+	s.accessedAccountsMutex.RLock()
+	for k := range s.accessedAccounts {
+		accounts = append(accounts, k)
+	}
+	s.accessedAccountsMutex.RUnlock()
+
+	accountResults, err := s.loadAccountBatchRPC(accounts)
+	if err != nil {
+		golog.Errorf("loadAccountBatchRPC failed: %v", err)
+		s.scratchPadMutex.Unlock()
+		return
+	}
+	for i := range accountResults {
+		nonce := uint64(accountResults[i].Nonce)
+		balance := accountResults[i].Balance.ToInt()
+		codeHash := accountResults[i].CodeHash
+		s.scratchPad[calcKey(BALANCE_KEY, accounts[i])] = balance.Bytes()
+		s.scratchPad[calcKey(NONCE_KEY, accounts[i])] = big.NewInt(int64(nonce)).Bytes()
+		s.scratchPad[calcKey(CODE_KEY, accounts[i])] = accountResults[i].Code
+		s.scratchPad[calcKey(CODEHASH_KEY, accounts[i])] = codeHash.Bytes()
+	}
+	golog.Info("[reset scratchpad] account prefetch done")
+
+	s.scratchPadMutex.Unlock()
+	golog.Debug("[reset scratchpad] unlock scratchPad")
+}
+
+func (db *OverlayStateDB) InitState(fetchNewState bool) {
+	utils.PrintMemUsage("[before init]")
+	reason := "reset and protect underlying"
+	db.state = db.state.getRootState()
+	golog.Infof("Resetting Scratchpad... BN: %d", *db.stateBN)
+	if fetchNewState {
+		db.resetScratchPad()
+	}
+	golog.Info(reason)
+	db.state = db.state.Derive(reason)
 	utils.PrintMemUsage("[current]")
 }
 
@@ -284,10 +356,9 @@ func (db *OverlayStateDB) Clone() *OverlayStateDB {
 
 func (db *OverlayStateDB) CloneFromRoot() *OverlayStateDB {
 	cpy := &OverlayStateDB{
-		ctx:  db.ctx,
-		ec:   db.ec,
-		conn: db.conn,
-		// block:     db.block,
+		ctx:       db.ctx,
+		ec:        db.ec,
+		conn:      db.conn,
 		refundGas: 0,
 		state:     db.state.DeriveFromRoot(),
 	}
