@@ -95,7 +95,7 @@ func (s *MferActionAPI) TogglePassthrough(enable bool) {
 	s.b.Passthrough = enable
 }
 
-func (s *MferActionAPI) PassthoughEnabled() bool {
+func (s *MferActionAPI) PassthroughEnabled() bool {
 	return s.b.Passthrough
 }
 
