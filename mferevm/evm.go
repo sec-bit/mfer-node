@@ -487,7 +487,7 @@ func (a *MferEVM) ExecuteTxs(txs types.Transactions, stateDB vm.StateDB, config 
 	return
 }
 
-func (a *MferEVM) DoCall(msg *types.Message, debug bool, stateDB vm.StateDB) (*core.ExecutionResult, error) {
+func (a *MferEVM) DoCall(msg *types.Message, debug bool, stateDB *mferstate.OverlayStateDB) (*core.ExecutionResult, error) {
 	txContext := core.NewEVMTxContext(msg)
 
 	// a.callMutex.Lock()
@@ -499,7 +499,7 @@ func (a *MferEVM) DoCall(msg *types.Message, debug bool, stateDB vm.StateDB) (*c
 		Tracer: a.tracer,
 	}
 
-	stateDB.(*mferstate.OverlayStateDB).SetCodeHash(msg.From(), common.Hash{})
+	stateDB.SetCodeHash(msg.From(), common.Hash{})
 	evm := vm.NewEVM(a.vmContext, txContext, stateDB, a.chainConfig, vmCfg)
 
 	gasPool := new(core.GasPool).AddGas(math.MaxUint64)

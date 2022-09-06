@@ -9,10 +9,12 @@ import (
 	"math/big"
 
 	"github.com/davecgh/go-spew/spew"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth/filters"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/kataras/golog"
 	"github.com/sec-bit/mfer-node/constant"
@@ -458,4 +460,30 @@ func (s *EthAPI) FeeHistory(ctx context.Context, blockCount rpc.DecimalOrHex, la
 		GasUsedRatio: make([]float64, blockCount),
 	}
 	return ret, nil
+}
+
+func (s *EthAPI) GetLogs(ctx context.Context, crit filters.FilterCriteria) ([]*types.Log, error) {
+	if crit.BlockHash != nil && *crit.BlockHash == crypto.Keccak256Hash([]byte("pseudoblockhash")) {
+		txs, _ := s.b.TxPool.GetPoolTxs()
+
+		logs := make([]*types.Log, 0)
+		// if err != nil {
+		// 	return nil, fmt.Errorf("failed to get txs from pool: %v", err)
+		// }
+		for _, tx := range txs {
+			logItems := s.b.EVM.StateDB.GetLogs(tx.Hash())
+			logs = append(logs, logItems...)
+		}
+		return logs, nil
+	}
+
+	logs, err := s.b.EVM.Conn.FilterLogs(ctx, ethereum.FilterQuery(crit))
+	if err != nil {
+		return nil, err
+	}
+	logsP := make([]*types.Log, len(logs))
+	for i := range logs {
+		logsP[i] = &logs[i]
+	}
+	return logsP, nil
 }
