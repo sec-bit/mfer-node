@@ -36,7 +36,7 @@ func defaultKeyCacheFilePath() string {
 	return path.Join(cacheDir, fileName)
 }
 
-const VERSION = "0.1.4"
+const VERSION = "0.1.5"
 
 func main() {
 	account := flag.String("account", "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "impersonate account")
