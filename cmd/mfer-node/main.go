@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"math/big"
 	"os"
 	"path"
 	"strconv"
@@ -48,6 +49,7 @@ func main() {
 	keyCacheFilePath := flag.String("keycache", defaultKeyCacheFilePath(), "state key cache file path")
 	batchSize := flag.Int("batchsize", 100, "batch request size")
 	logPath := flag.String("logpath", "./mfer-node.log", "path to log file")
+	chainID := flag.Uint64("chainid", 0, "chainid override (0 for auto detect)")
 	debugLevel := flag.String("debug", "info", "debug level")
 	version := flag.Bool("version", false, "show version")
 	flag.Parse()
@@ -100,6 +102,9 @@ func main() {
 	txPool := mfertxpool.NewMferTxPool()
 	b := mferbackend.NewMferBackend(mferEVM, txPool, impersonatedAccount, *rand)
 	b.Passthrough = *passthrough
+	if *chainID != 0 {
+		b.OverrideChainID = big.NewInt(int64(*chainID))
+	}
 	stack.RegisterAPIs(mferbackend.GetEthAPIs(b))
 	if err := stack.Start(); err != nil {
 		log.Panic(err)
