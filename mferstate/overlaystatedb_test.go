@@ -25,7 +25,7 @@ func TestDBDerive(t *testing.T) {
 	if err != nil {
 		log.Panic(err)
 	}
-	stateDB := NewOverlayStateDB(rpcClient, &bh, "./keycache.txt", 500)
+	stateDB := NewOverlayStateDB(rpcClient, &bh, "./keycache.txt", 100, 500)
 
 	// vmCfg := vm.Config{}
 

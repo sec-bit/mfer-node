@@ -35,6 +35,7 @@ type OverlayStateDB struct {
 	ec            *rpc.Client
 	conn          *ethclient.Client
 	cacheFilePath string
+	maxKeyCache   uint64
 	refundGas     uint64
 	state         *OverlayState
 	stateBN       *uint64
@@ -44,12 +45,13 @@ func (db *OverlayStateDB) GetOverlayDepth() int64 {
 	return db.state.deriveCnt
 }
 
-func NewOverlayStateDB(rpcClient *rpc.Client, blockNumber *uint64, keyCacheFilePath string, batchSize int) (db *OverlayStateDB) {
+func NewOverlayStateDB(rpcClient *rpc.Client, blockNumber *uint64, keyCacheFilePath string, maxKeyCache uint64, batchSize int) (db *OverlayStateDB) {
 	db = &OverlayStateDB{
 		ctx:           context.Background(),
 		ec:            rpcClient,
 		conn:          ethclient.NewClient(rpcClient),
 		cacheFilePath: keyCacheFilePath,
+		maxKeyCache:   maxKeyCache,
 		refundGas:     0,
 		stateBN:       blockNumber,
 	}
@@ -83,12 +85,17 @@ func (db *OverlayStateDB) resetScratchPad(clearKeyCache bool) {
 
 	golog.Debug("[reset scratchpad] load cached scratchPad key")
 	scanner := bufio.NewScanner(f)
+	keyCacheCnt := uint64(0)
 	for scanner.Scan() {
+		if keyCacheCnt >= db.maxKeyCache {
+			break
+		}
 		txt := scanner.Text()
 		s.scratchPad[string(STATE_KEY.Bytes())+string(common.Hex2Bytes(txt))] = []byte{}
 		if scanner.Err() != nil {
 			break
 		}
+		keyCacheCnt++
 	}
 
 	cachedStr := ""

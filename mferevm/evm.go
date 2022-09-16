@@ -43,6 +43,7 @@ type MferEVM struct {
 
 	StateDB             *mferstate.OverlayStateDB
 	keyCacheFilePath    string
+	maxKeyCache         uint64
 	batchSize           int
 	vmContext           vm.BlockContext
 	gasPool             *core.GasPool
@@ -58,7 +59,7 @@ type MferEVM struct {
 	// specifiedBlockNumber *uint64
 }
 
-func NewMferEVM(rawurl string, impersonatedAccount common.Address, keyCacheFilePath string, batchSize int) *MferEVM {
+func NewMferEVM(rawurl string, impersonatedAccount common.Address, keyCacheFilePath string, maxKeyCache uint64, batchSize int) *MferEVM {
 	mferEVM := &MferEVM{}
 	splittedRawUrl := strings.Split(rawurl, "@")
 	var specificBlock *uint64
@@ -88,6 +89,7 @@ DIAL:
 	mferEVM.stateLock = &sync.RWMutex{}
 	mferEVM.impersonatedAccount = impersonatedAccount
 	mferEVM.keyCacheFilePath = keyCacheFilePath
+	mferEVM.maxKeyCache = maxKeyCache
 	mferEVM.batchSize = batchSize
 	mferEVM.blockNumber = new(uint64)
 	if specificBlock != nil {
@@ -190,7 +192,7 @@ func (a *MferEVM) Prepare() error {
 	bn := header.Number.Uint64()
 	a.SetBlockNumber(bn)
 	if a.StateDB == nil {
-		a.StateDB = mferstate.NewOverlayStateDB(a.RpcClient, a.blockNumber, a.keyCacheFilePath, a.batchSize)
+		a.StateDB = mferstate.NewOverlayStateDB(a.RpcClient, a.blockNumber, a.keyCacheFilePath, a.maxKeyCache, a.batchSize)
 	}
 	a.StateDB.InitState(true, false)
 	a.StateDB.InitFakeAccounts()
