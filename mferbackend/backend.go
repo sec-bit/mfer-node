@@ -1,6 +1,8 @@
 package mferbackend
 
 import (
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/sec-bit/mfer-node/constant"
 	"github.com/sec-bit/mfer-node/mferevm"
@@ -13,6 +15,7 @@ type MferBackend struct {
 	ImpersonatedAccount common.Address
 	Randomized          bool
 	Passthrough         bool
+	OverrideChainID     *big.Int
 }
 
 func NewMferBackend(e *mferevm.MferEVM, txPool *mfertxpool.MferTxPool, impersonatedAccount common.Address, randomize bool) *MferBackend {

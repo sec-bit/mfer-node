@@ -432,6 +432,9 @@ func (s *EthAPI) GetTransactionReceipt(ctx context.Context, hash common.Hash) (m
 }
 
 func (s *EthAPI) ChainId() (*hexutil.Big, error) {
+	if s.b.OverrideChainID != nil {
+		return (*hexutil.Big)(s.b.OverrideChainID), nil
+	}
 	return (*hexutil.Big)(s.b.EVM.ChainID()), nil
 }
 

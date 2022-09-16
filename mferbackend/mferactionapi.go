@@ -63,6 +63,16 @@ func (s *MferActionAPI) GetTimeDelta() uint64 {
 	return s.b.EVM.GetTimeDelta()
 }
 
+func (s *MferActionAPI) OverrideChainID(id hexutil.Uint) {
+	if id == 0 {
+		s.b.OverrideChainID = nil
+		golog.Infof("Reset overrided chain id")
+	} else {
+		s.b.OverrideChainID = new(big.Int).SetUint64(uint64(id))
+		golog.Infof("Override chain id: %d", id)
+	}
+}
+
 func (s *MferActionAPI) Impersonate(account common.Address) {
 	s.b.ImpersonatedAccount = account
 }
