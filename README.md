@@ -9,3 +9,20 @@ mfer-node is an Ethereum transaction simulator based on go-ethereum.
 * Block pinning by adding a postfix `@height`
 * Trace blocks by specific range (Optimised for L2).
 * Auto merge batch request so you can even use a public RPC to get a good trace performance.
+
+# Build Instructions
+
+`go mod download`
+`go build -o mfer-node ./cmd/mfer-node`
+
+or use docker:
+
+Build: `docker build -t local/mfer-node:latest  -f Dockerfile .`
+Run: `docker run -d -p 8545:8545 -p 10545:10545 local/mfer-node mfer-node --upstream https://cloudflare-eth.com`
+
+or via docker-compose: 
+`docker-compose up -d`
+
+# Usage
+
+`mfer-node --help` to get all the available commands. 
