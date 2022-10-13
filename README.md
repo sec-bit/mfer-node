@@ -18,7 +18,7 @@ mfer-node is an Ethereum transaction simulator based on go-ethereum.
 or use docker:
 
 Build: `docker build -t local/mfer-node:latest  -f Dockerfile .`
-Run: `docker run -d -p 8545:8545 -p 10545:10545 local/mfer-node mfer-node --upstream https://cloudflare-eth.com`
+Run: `docker run -d -p 8545:8545 -p 10545:10545 local/mfer-node mfer-node --upstream https://rpc.ankr.com/eth`
 
 or via docker-compose: 
 `docker-compose up -d`
