@@ -7,5 +7,5 @@ services:
     - "8545:8545"
     - "10545:10545"
    restart: unless-stopped
-   command: 'mfer-node --upstream https://cloudflare-eth.com'
-   #cloudflare eth is a freely accessible ethereum node, can be removed to be replaced by localhost:8545 as default or can be replaced to any other node url like Infura/Alchemy etc.
+   command: 'mfer-node --upstream https://rpc.ankr.com/eth'
+   #Ankr is a freely accessible ethereum node, can be removed to be replaced by localhost:8545 as default or can be replaced to any other node url like self hosted/Infura/Alchemy etc.
