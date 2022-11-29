@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"math/big"
 
@@ -150,11 +151,6 @@ type MultiSendData struct {
 	CallError           error                 `json:"callError"`
 	EventLogs           []*types.Log          `json:"eventLogs"`
 	DebugTrace          json.RawMessage       `json:"debugTrace"`
-}
-
-func NewMferActionAPI(b *MferBackend) *MferActionAPI {
-	api := &MferActionAPI{b}
-	return api
 }
 
 func (s *MferActionAPI) GetTxs() ([]*TxData, error) {
@@ -348,39 +344,25 @@ func (s *MferActionAPI) traceBlocks(ctx context.Context, blocks []*types.Block, 
 	if len(blocks) == 0 {
 		return nil, errors.New("no blocks supplied")
 	}
-	txTraceResults := make([][]*txTraceResult, len(blocks))
 
-	spew.Dump(config)
-
-	allTxs := make([]*types.Transaction, 0)
-	for _, blk := range blocks {
-		allTxs = append(allTxs, blk.Transactions()...)
-	}
-
-	// Assemble the structured logger or the JavaScript tracer
-
-	stateBN := uint64(blocks[0].Header().Number.Int64() - 1)
-	s.b.EVM.SetBlockNumber(stateBN)
+	stateBN := blocks[0].NumberU64() - 1
 	s.b.EVM.Prepare() // TODO keep underlying state for re-use
-	// BNu64 := uint64(stateBN)
-	// s.b.EVM.StateDB.InitState(false)
+	s.b.EVM.SetVMContextByBlockHeader(s.b.EVM.GetBlockHeader(fmt.Sprintf("0x%x", stateBN)))
+	s.b.EVM.SetBlockNumber(stateBN)
+	s.b.EVM.StateDB.InitState(true, false)
+
+	txTraceResults := make([][]*txTraceResult, len(blocks))
 	stateDB := s.b.EVM.StateDB.CloneFromRoot()
-
-	golog.Infof("Warming up %d txs", len(allTxs))
-	s.b.EVM.WarmUpCache(allTxs, stateDB)
-	golog.Info("Warmed up")
-
-	stateDB = s.b.EVM.StateDB.CloneFromRoot()
-	golog.Infof("Tracing: block from %d using state %d\n", blocks[0].Header().Number, stateBN)
+	golog.Infof("Tracing: block from %d to %d using state %d", blocks[0].Header().Number, blocks[0].Header().Number.Int64()+int64(len(blocks))-1, stateBN)
 	for i, block := range blocks {
 		txs := block.Transactions()
 		s.b.EVM.SetVMContextByBlockHeader(block.Header())
+		s.b.EVM.AddGasPool()
 		s.b.EVM.ExecuteTxs(txs, stateDB, config)
-
 		results := make([]*txTraceResult, len(txs))
 		for i, tx := range txs {
 			receipt := stateDB.GetReceipt(tx.Hash())
-			if len(receipt.Logs) > 0 {
+			if receipt != nil && len(receipt.Logs) > 0 {
 				trace := receipt.Logs[len(receipt.Logs)-1].Data
 				results[i] = &txTraceResult{
 					Result: json.RawMessage(trace),
@@ -389,6 +371,8 @@ func (s *MferActionAPI) traceBlocks(ctx context.Context, blocks []*types.Block, 
 		}
 		txTraceResults[i] = results
 	}
+	cacheSize := stateDB.CacheSize()
+	golog.Infof("Final cache size %d", cacheSize)
 
 	// Run the transaction with tracing enabled.
 
@@ -431,4 +415,80 @@ func (s *MferActionAPI) TraceBlockByNumberRange(ctx context.Context, numberFrom,
 	results, err := s.traceBlocks(ctx, blks, config)
 	// spew.Dump(results)
 	return results, err
+}
+
+type TransactionBundleResult struct {
+	Transactions        []*RPCTransaction        `json:"transactions"`
+	TransactionReceipts []map[string]interface{} `json:"transactionReceipts"`
+	StateDiff           mferstate.StateOverride  `json:"stateDiff"`
+	LastTxHash          common.Hash              `json:"lastTxHash"`
+}
+
+func (s *MferActionAPI) buildRPCReceipt(tx *types.Transaction, receipt *types.Receipt) map[string]interface{} {
+	fields := map[string]interface{}{
+		"blockHash":         blockHash,
+		"blockNumber":       hexutil.Uint64(s.b.EVM.GetVMContext().BlockNumber.Uint64()),
+		"transactionHash":   tx.Hash(),
+		"transactionIndex":  hexutil.Uint64(receipt.TransactionIndex),
+		"to":                tx.To(),
+		"gasUsed":           hexutil.Uint64(receipt.GasUsed),
+		"cumulativeGasUsed": hexutil.Uint64(receipt.CumulativeGasUsed),
+		"contractAddress":   nil,
+		"logs":              receipt.Logs,
+		"logsBloom":         receipt.Bloom,
+		"type":              hexutil.Uint(0),
+	}
+	if len(receipt.PostState) > 0 {
+		fields["root"] = hexutil.Bytes(receipt.PostState)
+	}
+	fields["status"] = hexutil.Uint(receipt.Status)
+
+	if receipt.Logs == nil {
+		fields["logs"] = [][]*types.Log{}
+	}
+	// If the ContractAddress is 20 0x0 bytes, assume it is not a contract creation
+	if receipt.ContractAddress != (common.Address{}) {
+		fields["contractAddress"] = receipt.ContractAddress
+	}
+	return fields
+}
+
+func (s *MferActionAPI) TraceTransactionBundle(ctx context.Context, msgArgs []*TransactionArgs) (TransactionBundleResult, error) {
+	spew.Dump("TraceTransactionBundle", msgArgs)
+	stateDB := s.b.EVM.StateDB.CloneFromRoot()
+	s.b.EVM.AddGasPool()
+	// s.b.EVM.ExecuteTxs(txs, stateDB, nil)
+	var lastTxHash common.Hash
+	rpcTransactions := make([]*RPCTransaction, len(msgArgs))
+	rpcReceipts := make([]map[string]interface{}, len(msgArgs))
+	for i, msgArg := range msgArgs {
+		if msgArg.From == nil {
+			return TransactionBundleResult{}, fmt.Errorf("missing required field 'from' for transaction")
+		}
+		msgArg.MaxFeePerGas = nil
+		msgArg.MaxPriorityFeePerGas = nil
+		msgArg.GasPrice = nil
+		nonce := hexutil.Uint64(stateDB.GetNonce(*msgArg.From))
+		msgArg.Nonce = &nonce
+		signer := mfersigner.NewSigner(s.b.EVM.ChainID().Int64())
+		tx, err := msgArg.ToTransaction().WithSignature(signer, msgArg.From.Bytes())
+		if err != nil {
+			continue
+		}
+		lastTxHash = tx.Hash()
+		// golog.Infof("Executing tx %s", lastTxHash.Hex())
+		s.b.EVM.ExecuteMsg(stateDB, s.b.EVM.TxToMessage(tx), tx.Hash(), i, nil)
+		receiptItem := stateDB.GetReceipt(tx.Hash())
+		if receiptItem == nil {
+			return TransactionBundleResult{}, fmt.Errorf("missing receipt for tx %s", tx.Hash().Hex())
+		}
+		rpcTransactions[i] = newRPCTransaction(tx, receiptItem.BlockHash, receiptItem.BlockNumber.Uint64(), uint64(receiptItem.TransactionIndex), nil)
+		rpcTransactions[i].From = *msgArg.From
+		rpcReceipt := s.buildRPCReceipt(tx, receiptItem)
+		rpcReceipt["from"] = msgArg.From
+		rpcReceipts[i] = rpcReceipt
+	}
+	// spew.Dump("rpcTransactions", rpcTransactions, "rpcReceipts", rpcReceipts)
+	stateDiff := stateDB.GetStateDiff()
+	return TransactionBundleResult{rpcTransactions, rpcReceipts, stateDiff, lastTxHash}, nil
 }
