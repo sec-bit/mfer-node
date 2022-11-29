@@ -1,1 +1,4 @@
 cmd/mfer-node/mfer-node*
+cmd/mfer-node-stateless
+.DS_Store
+.vscode
