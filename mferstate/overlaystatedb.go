@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"context"
-	"fmt"
 	"log"
 	"math/big"
 	"os"
@@ -74,10 +73,10 @@ func (db *OverlayStateDB) resetScratchPad(clearKeyCache bool) {
 		log.Panicf("openfile error: %v", err)
 	}
 	defer f.Close()
-	fmt.Printf("cache saved @ %s\n", db.cacheFilePath)
 
 	if clearKeyCache {
 		s.scratchPad = make(map[string][]byte)
+		s.accessedAccounts = make(map[common.Address]bool)
 		f.Truncate(0)
 		f.Seek(0, 0)
 		return
@@ -123,6 +122,7 @@ func (db *OverlayStateDB) resetScratchPad(clearKeyCache bool) {
 	f.Truncate(0)
 	f.Seek(0, 0)
 	f.WriteString(cachedStr)
+	golog.Infof("cache saved @ %s", db.cacheFilePath)
 
 	for _, result := range reqs {
 		stateKey := calcStateKey(result.Address, result.Key)
@@ -323,7 +323,7 @@ func (db *OverlayStateDB) AddSlotToAccessList(addr common.Address, slot common.H
 
 func (db *OverlayStateDB) RevertToSnapshot(revisionID int) {
 	tmpState := db.state.Parent()
-	golog.Infof("Rollbacking... revision: %d, currentID: %d", revisionID, tmpState.deriveCnt)
+	golog.Debugf("Rollbacking... revision: %d, currentID: %d", revisionID, tmpState.deriveCnt)
 	for {
 		if tmpState.deriveCnt+1 == int64(revisionID) {
 			db.state = tmpState

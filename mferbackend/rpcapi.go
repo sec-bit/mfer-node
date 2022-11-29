@@ -52,7 +52,7 @@ func GetEthAPIs(b *MferBackend) []rpc.API {
 		{
 			Namespace: "mfer",
 			Version:   "1.0",
-			Service:   NewMferActionAPI(b),
+			Service:   &MferActionAPI{b},
 			Public:    true,
 		},
 		{

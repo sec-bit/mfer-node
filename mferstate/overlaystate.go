@@ -198,7 +198,7 @@ func (s *OverlayState) loadAccountBatchRPC(accounts []common.Address) ([]Fetched
 			if end > len(batchElem) {
 				end = len(batchElem)
 			}
-			golog.Infof("loadAccount batch req(total=%d): begin: %d, end: %d", len(batchElem), begin, end)
+			golog.Debugf("loadAccount batch req(total=%d): begin: %d, end: %d", len(batchElem), begin, end)
 			err := s.ec.BatchCallContext(s.ctx, batchElem[begin:end])
 			if err != nil {
 				rpcTries++
@@ -221,7 +221,7 @@ func (s *OverlayState) loadAccountBatchRPC(accounts []common.Address) ([]Fetched
 			result[i].CodeHash = crypto.Keccak256Hash(result[i].Code)
 		}
 	}
-	golog.Infof("fetched %d accounts batched@%d (consumes: %v)", len(accounts), *s.bn, time.Since(start))
+	golog.Debugf("fetched %d accounts batched@%d (consumes: %v)", len(accounts), *s.bn, time.Since(start))
 
 	return result, nil
 }
@@ -296,13 +296,13 @@ func (s *OverlayState) loadStateBatchRPC(storageReqs []*StorageReq) error {
 		if end > len(reqs) {
 			end = len(reqs)
 		}
-		golog.Infof("loadState batch req(total=%d): begin: %d, end: %d", len(reqs), begin, end)
+		golog.Debugf("loadState batch req(total=%d): begin: %d, end: %d", len(reqs), begin, end)
 		if err := s.ec.BatchCallContext(s.ctx, reqs[begin:end]); err != nil {
 			return err
 		}
 	}
 
-	golog.Infof("fetched %d state batched@%d (consumes: %v)", len(reqs), *s.bn, time.Since(start))
+	golog.Debugf("fetched %d state batched@%d (consumes: %v)", len(reqs), *s.bn, time.Since(start))
 
 	for i := range storageReqs {
 		storageReqs[i].Value = values[i]

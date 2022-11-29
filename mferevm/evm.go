@@ -13,7 +13,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/dustin/go-humanize"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/eth/tracers"
@@ -156,6 +155,11 @@ func (a *MferEVM) ResetToRoot() {
 	a.gasPool.AddGas(a.vmContext.GasLimit)
 }
 
+func (a *MferEVM) AddGasPool() {
+	a.gasPool = new(core.GasPool)
+	a.gasPool.AddGas(a.vmContext.GasLimit)
+}
+
 func (a *MferEVM) Prepare() error {
 	a.chainConfig = core.DefaultGenesisBlock().Config
 	chainID, err := a.Conn.ChainID(a.ctx)
@@ -175,8 +179,6 @@ func (a *MferEVM) Prepare() error {
 		}
 		return blk.Hash()
 	}
-	a.gasPool = new(core.GasPool)
-	a.gasPool.AddGas(math.MaxUint64)
 	a.vmContext = vm.BlockContext{
 		CanTransfer: core.CanTransfer,
 		Transfer:    core.Transfer,
@@ -187,7 +189,6 @@ func (a *MferEVM) Prepare() error {
 		Time:        big.NewInt(0),
 		Difficulty:  big.NewInt(0),
 	}
-
 	header := a.setVMContext()
 	bn := header.Number.Uint64()
 	a.SetBlockNumber(bn)
@@ -196,8 +197,7 @@ func (a *MferEVM) Prepare() error {
 	}
 	a.StateDB.InitState(true, false)
 	a.StateDB.InitFakeAccounts()
-	a.gasPool = new(core.GasPool)
-	a.gasPool.AddGas(a.vmContext.GasLimit)
+	a.AddGasPool()
 	return nil
 }
 
@@ -309,6 +309,9 @@ func (a *MferEVM) updatePendingBN() {
 		case <-headerChan:
 			a.setVMContext()
 		}
+		if a.StateDB == nil {
+			continue
+		}
 		sizeStr := humanize.Bytes(uint64(a.StateDB.CacheSize()))
 		golog.Infof("[Update] BN: %d, StateBlock: %d, Ts: %d, Diff: %d, GasLimit: %d, Cache: %s, RPCReq: %d",
 			a.vmContext.BlockNumber, a.StateDB.StateBlockNumber(), a.vmContext.Time, a.vmContext.Difficulty, a.vmContext.GasLimit, sizeStr, a.StateDB.RPCRequestCount())
@@ -337,16 +340,19 @@ func (a *MferEVM) TxToMessage(tx *types.Transaction) types.Message {
 	return msg
 }
 
+// WarmUpCache is a specular method, it execute txs parallely to make batch getStorageAt request
 func (a *MferEVM) WarmUpCache(txs types.Transactions, stateDB *mferstate.OverlayStateDB) {
+	golog.Infof("Warming up %d txs", len(txs))
+	start := time.Now()
 	wg := sync.WaitGroup{}
 	txCh := make(chan *types.Transaction, 100)
 	for i := 0; i < 20; i++ {
 		wg.Add(1)
 		go func(db *mferstate.OverlayStateDB) {
 			defer wg.Done()
+			stateDB := db.Clone()
 			for tx := range txCh {
 				msg := a.TxToMessage(tx)
-				stateDB := db.CloneFromRoot()
 				gp := new(core.GasPool)
 				gp.AddGas(math.MaxUint64)
 				// stateDB.(*mferstate.OverlayStateDB).SetCodeHash(msg.From(), common.Hash{})
@@ -362,131 +368,134 @@ func (a *MferEVM) WarmUpCache(txs types.Transactions, stateDB *mferstate.Overlay
 	}
 	close(txCh)
 	wg.Wait()
+	cacheSize := stateDB.CloneFromRoot().CacheSize()
+	golog.Infof("Warmed up %d caches (consumes: %s)", cacheSize, time.Since(start))
 }
 
-func (a *MferEVM) ExecuteTxs(txs types.Transactions, stateDB vm.StateDB, config *tracers.TraceConfig) (execResults []error) {
+func (a *MferEVM) ExecuteTxs(txs types.Transactions, stateDB *mferstate.OverlayStateDB, config *tracers.TraceConfig) (execResults []error) {
 	execResults = make([]error, len(txs))
 	var (
 		gasUsed = uint64(0)
 		txIndex = 0
 	)
+	for i, tx := range txs {
+		// just try some txs
+		if i < 100 {
+			a.WarmUpCache(txs[i:], stateDB.Clone())
+		}
+		msg := a.TxToMessage(tx)
+		gas, result := a.ExecuteMsg(stateDB, msg, tx.Hash(), i, config)
+		gasUsed += gas
+		execResults[i] = result
+		txIndex++
+	}
+
+	return
+}
+
+func (a *MferEVM) ExecuteMsg(stateDB *mferstate.OverlayStateDB, msg types.Message, txHash common.Hash, txIndex int, config *tracers.TraceConfig) (gasUsed uint64, execResult error) {
+	stateDB.SetCodeHash(msg.From(), common.Hash{})
+	txContext := core.NewEVMTxContext(msg)
+	snapshot := stateDB.Snapshot()
 	var (
 		tracer tracers.Tracer
 		err    error
 	)
-	for i, tx := range txs {
-		txctx := &tracers.Context{
-			TxHash:  tx.Hash(),
-			TxIndex: i,
-		}
-
-		switch {
-		case config != nil && config.Tracer != nil:
-			// Define a meaningful timeout of a single transaction trace
-			timeout := time.Second * 1
-			if config.Timeout != nil {
-				if timeout, err = time.ParseDuration(*config.Timeout); err != nil {
-					return nil
-				}
-			}
-			// Constuct the JavaScript tracer to execute with
-			if tracer, err = tracers.New(*config.Tracer, txctx, config.TracerConfig); err != nil {
-				return nil
-			}
-			// Handle timeouts and RPC cancellations
-			deadlineCtx, cancel := context.WithTimeout(context.Background(), timeout)
-			go func() {
-				<-deadlineCtx.Done()
-				if deadlineCtx.Err() == context.DeadlineExceeded {
-					tracer.Stop(errors.New("execution timeout"))
-				}
-			}()
-			defer cancel()
-
-		case config == nil:
-			tracer, err = tracers.New("callTracer", txctx, nil)
-			if err != nil {
-				log.Panic(err)
-			}
-		default:
-			config.EnableMemory = true
-			config.EnableReturnData = true
-			config.DisableStorage = false
-			tracer = logger.NewStructLogger(config.Config)
-		}
-		msg := a.TxToMessage(tx)
-		stateDB.(*mferstate.OverlayStateDB).SetCodeHash(msg.From(), common.Hash{})
-		// log.Printf("From: %s, To: %s, Nonce: %d, GasPrice: %d, Gas: %d, Hash: %s", msg.From(), msg.To(), msg.Nonce(), msg.GasPrice(), msg.Gas(), tx.Hash())
-
-		txContext := core.NewEVMTxContext(msg)
-		snapshot := stateDB.Snapshot()
-
-		// a.vmContext.BlockNumber.Add(a.vmContext.BlockNumber, big.NewInt(int64(msg.Nonce())))
-		// a.vmContext.Time.Add(a.vmContext.Time, big.NewInt(int64(msg.Nonce()*10)))
-		evm := vm.NewEVM(a.vmContext, txContext, stateDB, a.chainConfig, vm.Config{
-			Debug:  true,
-			Tracer: tracer,
-		})
-
-		stateDB.(*mferstate.OverlayStateDB).StartLogCollection(tx.Hash(), blockHash)
-		msgResult, err := core.ApplyMessage(evm, msg, a.gasPool)
-		// spew.Dump(msgResult)
-		if err != nil {
-			golog.Errorf("rejected tx: %s, from: %s, err: %v", tx.Hash().Hex(), msg.From(), err)
-			stateDB.(*mferstate.OverlayStateDB).RevertToSnapshot(snapshot)
-			continue
-		}
-		if len(msgResult.Revert()) > 0 || msgResult.Err != nil {
-			spew.Dump(msgResult.Revert(), msgResult.Err)
-			reason, errUnpack := abi.UnpackRevert(msgResult.Revert())
-			err = errors.New("execution reverted")
-			if errUnpack == nil {
-				err = fmt.Errorf("execution reverted: %v", reason)
-			}
-			execResults[i] = err
-			golog.Errorf("TxIdx: %d,  err: %v", txIndex, err)
-		}
-		gasUsed += msgResult.UsedGas
-
-		receipt := &types.Receipt{Type: tx.Type(), PostState: rootHash.Bytes(), CumulativeGasUsed: gasUsed}
-		if msgResult.Failed() {
-			receipt.Status = types.ReceiptStatusFailed
-		} else {
-			receipt.Status = types.ReceiptStatusSuccessful
-		}
-		receipt.TxHash = tx.Hash()
-		receipt.BlockHash = blockHash
-		receipt.BlockNumber = a.vmContext.BlockNumber
-		receipt.GasUsed = msgResult.UsedGas
-
-		if msg.To() == nil {
-			receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, tx.Nonce())
-		}
-
-		traceResult, err := tracer.GetResult()
-		if err != nil {
-			golog.Error(err)
-		}
-
-		txExecutionLogs := stateDB.(*mferstate.OverlayStateDB).GetLogs(tx.Hash())
-		traceLogs := &types.Log{
-			Address: common.HexToAddress("0x3fe75afe000000003fe75afe000000003fe75afe"),
-			Topics:  []common.Hash{crypto.Keccak256Hash([]byte("TRACE"))},
-			Data:    traceResult,
-		}
-		receipt.Logs = append(txExecutionLogs, traceLogs)
-		receipt.TransactionIndex = uint(txIndex)
-		stateDB.(*mferstate.OverlayStateDB).AddLog(traceLogs)
-		stateDB.(*mferstate.OverlayStateDB).AddReceipt(tx.Hash(), receipt)
-		// log.Printf("exec final depth: %d, snapshot revision id: %d", stateDB.(*mferstate.OverlayStateDB).GetOverlayDepth(), snapshot)
-		// stateDB.(*mferstate.OverlayStateDB).MergeTo(1)
-		txIndex++
-
-		// writer.Write(traceResult)
-		// writer.Flush()
+	txctx := &tracers.Context{
+		BlockHash: blockHash,
+		TxHash:    txHash,
+		TxIndex:   txIndex,
 	}
 
-	return
+	switch {
+	case config != nil && config.Tracer != nil:
+		// Define a meaningful timeout of a single transaction trace
+		timeout := time.Second * 1
+		if config.Timeout != nil {
+			if timeout, err = time.ParseDuration(*config.Timeout); err != nil {
+				return 0, err
+			}
+		}
+		// Constuct the JavaScript tracer to execute with
+		if tracer, err = tracers.New(*config.Tracer, txctx, config.TracerConfig); err != nil {
+			return 0, err
+		}
+		// Handle timeouts and RPC cancellations
+		deadlineCtx, cancel := context.WithTimeout(context.Background(), timeout)
+		go func() {
+			<-deadlineCtx.Done()
+			if deadlineCtx.Err() == context.DeadlineExceeded {
+				tracer.Stop(errors.New("execution timeout"))
+			}
+		}()
+		defer cancel()
+
+	case config == nil:
+		tracer, err = tracers.New("callTracer", txctx, nil)
+		if err != nil {
+			log.Panic(err)
+		}
+	default:
+		config.EnableMemory = true
+		config.EnableReturnData = true
+		config.DisableStorage = false
+		tracer = logger.NewStructLogger(config.Config)
+	}
+
+	evm := vm.NewEVM(a.vmContext, txContext, stateDB, a.chainConfig, vm.Config{
+		Debug:  true,
+		Tracer: tracer,
+	})
+
+	stateDB.StartLogCollection(txHash, blockHash)
+	msgResult, err := core.ApplyMessage(evm, msg, a.gasPool)
+	if err != nil {
+		golog.Errorf("rejected tx: %s, from: %s, err: %v", txHash.Hex(), msg.From(), err)
+		stateDB.RevertToSnapshot(snapshot)
+		return 0, err
+	}
+	var msgExecErr error
+	if len(msgResult.Revert()) > 0 || msgResult.Err != nil {
+		// spew.Dump(msgResult.Revert(), msgResult.Err)
+		reason, errUnpack := abi.UnpackRevert(msgResult.Revert())
+		msgExecErr = errors.New("execution reverted")
+		if errUnpack == nil {
+			msgExecErr = fmt.Errorf("execution reverted: %v", reason)
+		}
+		golog.Errorf("TxIdx: %d, Hash: %s, unwrapped: %v, err: %v", txIndex, txHash.Hex(), msgResult.Unwrap(), msgExecErr)
+	}
+	gasUsed = msgResult.UsedGas
+	receipt := &types.Receipt{Type: types.LegacyTxType, PostState: rootHash.Bytes(), CumulativeGasUsed: gasUsed}
+	if msgResult.Failed() {
+		receipt.Status = types.ReceiptStatusFailed
+	} else {
+		receipt.Status = types.ReceiptStatusSuccessful
+	}
+	receipt.TxHash = txHash
+	receipt.BlockHash = blockHash
+	receipt.BlockNumber = a.vmContext.BlockNumber
+	receipt.GasUsed = msgResult.UsedGas
+
+	if msg.To() == nil {
+		receipt.ContractAddress = crypto.CreateAddress(evm.TxContext.Origin, msg.Nonce())
+	}
+
+	traceResult, err := tracer.GetResult()
+	if err != nil {
+		golog.Error(err)
+	}
+
+	txExecutionLogs := stateDB.GetLogs(txHash)
+	traceLogs := &types.Log{
+		Address: common.HexToAddress("0x3fe75afe000000003fe75afe000000003fe75afe"),
+		Topics:  []common.Hash{crypto.Keccak256Hash([]byte("TRACE"))},
+		Data:    traceResult,
+	}
+	receipt.Logs = append(txExecutionLogs, traceLogs)
+	receipt.TransactionIndex = uint(txIndex)
+	stateDB.AddLog(traceLogs)
+	stateDB.AddReceipt(txHash, receipt)
+	return gasUsed, msgExecErr
 }
 
 func (a *MferEVM) DoCall(msg *types.Message, debug bool, stateDB *mferstate.OverlayStateDB) (*core.ExecutionResult, error) {
