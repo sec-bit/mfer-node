@@ -470,6 +470,12 @@ func (s *MferActionAPI) TraceTransactionBundle(ctx context.Context, msgArgs []*T
 		msgArg.GasPrice = nil
 		nonce := hexutil.Uint64(stateDB.GetNonce(*msgArg.From))
 		msgArg.Nonce = &nonce
+		// if msg.Gas is nil, set it to 10000000
+		if msgArg.Gas == nil || *msgArg.Gas == 0 {
+			gasLimit := hexutil.Uint64(10000000)
+			msgArg.Gas = &gasLimit
+		}
+
 		signer := mfersigner.NewSigner(s.b.EVM.ChainID().Int64())
 		tx, err := msgArg.ToTransaction().WithSignature(signer, msgArg.From.Bytes())
 		if err != nil {

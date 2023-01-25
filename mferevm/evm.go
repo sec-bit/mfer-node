@@ -451,6 +451,8 @@ func (a *MferEVM) ExecuteMsg(stateDB *mferstate.OverlayStateDB, msg types.Messag
 	msgResult, err := core.ApplyMessage(evm, msg, a.gasPool)
 	if err != nil {
 		golog.Errorf("rejected tx: %s, from: %s, err: %v", txHash.Hex(), msg.From(), err)
+		// print msg gas and gasPool
+		golog.Infof("msg gas: %d, gasPool: %d", msg.Gas(), a.gasPool.Gas())
 		stateDB.RevertToSnapshot(snapshot)
 		return 0, err
 	}
