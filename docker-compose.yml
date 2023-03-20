@@ -6,7 +6,7 @@ services:
    restart: unless-stopped
    command: '/run.sh'
    environment:
-     - LISTEN=${LISTEN}
+     - LISTEN=0.0.0.0:8545
      - UPSTREAM=${UPSTREAM}
      - MAXKEYS=${MAXKEYS}
      - BATCHSIZE=${BATCHSIZE}
@@ -15,10 +15,10 @@ services:
   rpc-proxy:
     build: https://github.com/sec-bit/mfer-node.git#rpc-proxy
     ports:
-      - "10545:10545"
+      - "${EXPOSE_PORT}:11111"
     environment:
-      - TARGET=http://mfer-node:10545
-      - METHODS=mfer_traceTransactionBundle,eth_blockNumber
+      - TARGET=http://mfer-node:8545 # connect to mfer-node's rpc port
+      - METHODS=${ALLOWED_METHODS}
       - LISTEN_ADDR=0.0.0.0 
-      - LISTEN_PORT=10545 
+      - LISTEN_PORT=11111 
     restart: unless-stopped
