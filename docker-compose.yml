@@ -3,9 +3,21 @@ version: "3.7"
 services:
   mfer-node:
    build: .
-   ports: 
-    - "8545:8545"
-    - "10545:10545"
    restart: unless-stopped
-   command: 'mfer-node --upstream https://rpc.ankr.com/eth'
-   #Ankr is a freely accessible ethereum node, can be removed to be replaced by localhost:8545 as default or can be replaced to any other node url like self hosted/Infura/Alchemy etc.
+   command: '/run.sh'
+   environment:
+     - LISTEN=0.0.0.0:10545
+     - UPSTREAM=https://rpc.ankr.com/eth
+     - MAXKEYS=100
+     - BATCHSIZE=200
+
+  rpc-proxy:
+    build: https://github.com/sec-bit/mfer-node.git#rpc-proxy
+    ports:
+      - "10545:10545"
+    environment:
+      - TARGET=http://mfer-node:10545
+      - METHODS=mfer_traceTransactionBundle,eth_blockNumber
+      - LISTEN_ADDR=0.0.0.0 
+      - LISTEN_PORT=10545 
+    restart: unless-stopped

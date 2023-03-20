@@ -17,7 +17,8 @@ FROM alpine:latest
 RUN apk add --no-cache ca-certificates
 # copy the binary from the builder
 COPY --from=builder /mfer-node/mfer-node /usr/local/bin/mfer-node
-
+COPY run.sh /run.sh
+RUN chmod +x /run.sh
 EXPOSE 10545
 
-CMD ["mfer-node"]
+CMD ["/run.sh"]
