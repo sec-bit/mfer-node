@@ -1,5 +1,5 @@
 # Start from the official golang base image
-FROM golang:1.17-alpine as builder
+FROM golang:1.19-alpine as builder
 
 # Add the required build tools
 RUN apk add --no-cache git
