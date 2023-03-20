@@ -6,10 +6,11 @@ services:
    restart: unless-stopped
    command: '/run.sh'
    environment:
-     - LISTEN=0.0.0.0:10545
-     - UPSTREAM=https://rpc.ankr.com/eth
-     - MAXKEYS=100
-     - BATCHSIZE=200
+     - LISTEN=${LISTEN}
+     - UPSTREAM=${UPSTREAM}
+     - MAXKEYS=${MAXKEYS}
+     - BATCHSIZE=${BATCHSIZE}
+     - LOGPATH=${LOGPATH} #leave blank for stdout
 
   rpc-proxy:
     build: https://github.com/sec-bit/mfer-node.git#rpc-proxy
